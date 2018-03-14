@@ -1,0 +1,47 @@
+#!/bin/sh 
+# 
+# yshd_game - this script starts and stops the yshd_game daemon 
+# 
+# chkconfig:  - 85 15 
+# description: YSHD_GAME is an golang server, golang reverse 
+# processname: yshd_game
+RETVAL=0
+yshd_file="/data/niuniu"
+process_file="$yshd_file/yshd_game"
+process="yshd_game" 
+
+start() { 
+echo "Starting $(basename $process_file)"
+cd $yshd_file && ./$process & > /dev/null 2>&1
+} 
+
+stop() { 
+echo "Stopping $(basename $process_file)" 
+ps aux | grep -w $process | grep -v grep | awk '{print $2}' | xargs kill -2 > /dev/null
+}
+
+restart() {
+	stop
+	sleep 3
+	start
+}
+
+case "$1" in 
+        start) 
+     start
+        ;; 
+        stop) 
+     stop
+        ;;
+     status)
+	status $process
+        RETVAL=$?
+	;;
+	restart)
+     restart
+	;;
+        *)
+        echo $"Usage: $0 {start|stop|restart|stauts}"
+        exit 2 
+esac
+exit $RETVAL

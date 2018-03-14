@@ -1,0 +1,35 @@
+FROM golang:latest
+RUN mkdir -p /go/src/mygo
+WORKDIR /go/src/mygo
+COPY . /go/src/mygo
+ADD main /go/src/mygo/main
+RUN cd /go/src/mygo/ && chmod +x main
+volume
+ENV PORT 8085
+EXPOSE 8082
+CMD ["nohup","/go/src/mygo/main","&"]
+
+
+
+
+
+
+
+
+
+package main
+import (
+"io"
+"log"
+"net/http"
+)
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+io.WriteString(w, "Hello, mylove")
+}
+func main() {
+http.HandleFunc("/mylove", helloHandler)
+err := http.ListenAndServe(":8085", nil)
+if err != nil {
+log.Fatal("ListenAndServe: ", err.Error())
+}
+}

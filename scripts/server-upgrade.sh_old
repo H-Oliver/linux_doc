@@ -1,0 +1,85 @@
+#!/bin/bash
+time=_` date +%y%m%d%H%M%S `
+PID=1
+prog=yshd_game
+process=17wan-t1
+datadir=/data/niuniu
+backdir=/data/server-backup
+packdir=/data/server-package
+logfile=/var/log/yshd_game.log
+echo "" | tee $logfile
+echo -e "\033[33m \033[1m              登陆用户：$(logname)  操作时间：`date +%F\ %T` \033[0m" | tee -a $logfile
+echo "" | tee -a $logfile
+echo -e "\033[33m \033[1m             升级前服务器进程状态如下：\033[0m"
+echo "" | tee -a $logfile
+sudo ps aux |grep -w $prog | grep -v grep |grep -v "tee -a $logfile" |tee -a $logfile
+echo "" | tee -a $logfile
+
+if [ -e "$datadir/$prog" ]; then
+    if [ -e "$packdir/yshd_game.zip" ]; then
+        sudo mv $datadir/yshd_game $backdir/yshd_game$time 2>&1 | tee -a $logfile
+        unzip $packdir/yshd_game.zip -d $datadir/ 2>&1 | tee -a $logfile
+        sudo mv $packdir/yshd_game.zip $packdir/yshd_game.zip$time 2>&1 | tee -a $logfile
+        sudo chmod a+x $datadir/yshd_game
+        sudo kill -2 `ps aux |grep -w $prog |grep -v grep |awk '{print $2}'` 2>&1 |tee -a $logfile
+        echo "" | tee -a $logfile
+	#倒计时
+        seconds_left=5
+        echo -e "\033[32m \033[1m                升级操作持续$seconds_left秒钟，请等待……\033[0m"
+        echo ""
+        while [ $seconds_left -gt 0 ];do
+            echo -n -e "\033[32m \033[1m                   还剩:$seconds_left秒"
+            sleep 1
+            seconds_left=$(($seconds_left - 1))
+            echo -ne "\r     \r"
+        done
+
+        echo "" | tee -a $logfile
+        echo -e "\033[32m \033[1m                服务器(`date +%F\ %T`)升级完成\033[0m" | tee -a $logfile
+        echo "" | tee -a $logfile
+        echo -e "\033[33m \033[1m             升级后服务器进程状态如下：\033[0m" | tee -a $logfile
+
+        echo "" | tee -a $logfile
+        sudo ps aux |grep -w $prog | grep -v grep |grep -v "tee -a $logfile" |tee -a $logfile
+        echo "" | tee -a $logfile
+
+    else
+        echo "" | tee -a $logfile
+        echo -e "\033[35m \033[1m              注意：yshd_game.zip 更新包未上传到服务器,请上传\033[0m" |tee -a $logfile
+        echo "" | tee -a $logfile      
+    fi
+
+else
+    echo "" | tee -a $logfile
+    echo -e "\033[35m \033[1m              注意：服务器进程文件\"$datadir/$prog\"不存在，可能已移除或删除了\033[0m" |tee -a $logfile
+
+    if [ -e "$packdir/yshd_game.zip" ]; then
+        unzip $packdir/yshd_game.zip -d $datadir/ 2>&1 | tee -a $logfile
+        sudo mv $packdir/yshd_game.zip $packdir/yshd_game.zip$time 2>&1 | tee -a $logfile
+        sudo chmod a+x $datadir/yshd_game
+        sudo kill -2 `ps aux |grep -w $prog |grep -v grep |awk '{print $2}'` 2>&1 |tee -a $logfile
+        echo "" | tee -a $logfile
+	#倒计时
+        seconds_left=5
+        echo -e "\033[32m \033[1m                升级操作持续$seconds_left秒钟，请等待……\033[0m"
+        while [ $seconds_left -gt 0 ];do
+            echo -n -e "\033[32m \033[1m                   还剩:$seconds_left秒\033[0m"
+            sleep 1
+            seconds_left=$(($seconds_left - 1))
+            echo -ne "\r     \r"
+        done
+
+        echo "" | tee -a $logfile
+        echo -e "\033[32m \033[1m                服务器在(`date +%F\ %T`)升级完成\033[0m" | tee -a $logfile
+        echo "" | tee -a $logfile
+        echo -e "\033[33m \033[1m             升级后服务器进程状态如下：\033[0m" | tee -a $logfile
+        echo "" | tee -a $logfile
+        echo "" | tee -a $logfile
+        sudo ps aux |grep -w $prog | grep -v grep |grep -v "tee -a $logfile" |tee -a $logfile
+        echo "" | tee -a $logfile
+    else
+        echo "" | tee -a $logfile
+        echo -e "\033[35m \033[1m              注意：yshd_game.zip 更新包未上传到服务器，请上传\033[0m" |tee -a $logfile
+        echo "" | tee -a $logfile
+    fi
+fi

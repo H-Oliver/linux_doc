@@ -1,0 +1,280 @@
+master	192.168.1.14
+slave	192.168.1.15
+
+
+1.拉取nginx和php-fpm镜像
+docker pull nginx
+#docker pull php:7.1.5-fpm
+docker pull bitnami/php-fpm
+
+2.创建nginx数据目录
+mkdir -p /opt/nginx/{conf,conf.d,html,log}
+mkdir -p /opt/php/conf
+
+3.创建nginx default.conf
+cat /opt/nginx/conf.d/default.conf << EOF
+map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+}
+upstream gameweb {
+        ip_hash;
+        server 192.168.1.14:3001 weight=2;
+        server 192.168.1.14:3002;
+}
+server
+{
+    listen 3003;
+    server_name master.localhost.com;
+    error_log /var/log/nginx/gameweb_error.log debug;
+    access_log /var/log/nginx/gameweb_access.log;
+
+
+location / {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass_header Server;
+        proxy_set_header Host $http_host;
+        proxy_redirect off;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Scheme $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Nginx-Proxy true;
+        proxy_pass http://gameweb;
+
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Credentials true;
+        add_header Access-Control-Allow-Headers Content-Type,Accept;
+        add_header Access-Control-Allow-Methods GET;
+       
+    }
+
+}
+
+server {
+        listen       80 default_server;
+        server_name  _;
+        root         /usr/share/nginx/html;
+
+        location / {
+            index  index.html index.htm index.php;
+            autoindex  off;
+        }
+        location ~ \.php(.*)$ {
+            root           /usr/share/nginx/html/;
+            fastcgi_pass   php:9000;
+            fastcgi_index  index.php;
+            fastcgi_split_path_info  ^((?U).+\.php)(/?.+)$;
+            fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+            fastcgi_param  PATH_INFO  $fastcgi_path_info;
+            fastcgi_param  PATH_TRANSLATED  $document_root$fastcgi_path_info;
+            include        fastcgi_params;
+        }
+}
+EOF
+
+4.配置phpinfo
+tee /opt/nginx/html/info.php <<EOF
+
+# php.ini
+# cat /opt/php/config/php.ini
+# [PHP]
+# engine = On
+# short_open_tag = Off
+# asp_tags = Off
+# precision = 14
+# output_buffering = 4096
+# zlib.output_compression = Off
+# implicit_flush = Off
+# unserialize_callback_func =
+# serialize_precision = 17
+# disable_functions =
+# disable_classes =
+# zend.enable_gc = On
+# expose_php = On
+# max_execution_time = 30
+# max_input_time = 60
+# memory_limit = 128M
+# error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+# display_errors = Off
+# display_startup_errors = Off
+# log_errors = On
+# log_errors_max_len = 1024
+# ignore_repeated_errors = Off
+# ignore_repeated_source = Off
+# report_memleaks = On
+# track_errors = Off
+# html_errors = On
+# variables_order = "GPCS"
+# request_order = "GP"
+# register_argc_argv = Off
+# auto_globals_jit = On
+# post_max_size = 8M
+# auto_prepend_file =
+# auto_append_file =
+# default_mimetype = "text/html"
+# default_charset = "UTF-8"
+# doc_root =
+# user_dir =
+# enable_dl = Off
+# cgi.fix_pathinfo=1
+# file_uploads = On
+# upload_max_filesize = 2M
+# max_file_uploads = 20
+# allow_url_fopen = On
+# allow_url_include = Off
+# default_socket_timeout = 60
+# [CLI Server]
+# cli_server.color = On
+# [Date]
+# date.timezone = PRC
+# [filter]
+# [iconv]
+# [intl]
+# [sqlite]
+# [sqlite3]
+# [Pcre]
+# [Pdo]
+# [Pdo_mysql]
+# pdo_mysql.cache_size = 2000
+# pdo_mysql.default_socket=
+# [Phar]
+# [mail function]
+# sendmail_path = /usr/sbin/sendmail -t -i
+# mail.add_x_header = On
+# [SQL]
+# sql.safe_mode = Off
+# [ODBC]
+# odbc.allow_persistent = On
+# odbc.check_persistent = On
+# odbc.max_persistent = -1
+# odbc.max_links = -1
+# odbc.defaultlrl = 4096
+# odbc.defaultbinmode = 1
+# [Interbase]
+# ibase.allow_persistent = 1
+# ibase.max_persistent = -1
+# ibase.max_links = -1
+# ibase.timestampformat = "%Y-%m-%d %H:%M:%S"
+# ibase.dateformat = "%Y-%m-%d"
+# ibase.timeformat = "%H:%M:%S"
+# [MySQL]
+# mysql.allow_local_infile = On
+# mysql.allow_persistent = On
+# mysql.cache_size = 2000
+# mysql.max_persistent = -1
+# mysql.max_links = -1
+# mysql.default_port =
+# mysql.default_socket =
+# mysql.default_host =
+# mysql.default_user =
+# mysql.default_password =
+# mysql.connect_timeout = 60
+# mysql.trace_mode = Off
+# [MySQLi]
+# mysqli.max_persistent = -1
+# mysqli.allow_persistent = On
+# mysqli.max_links = -1
+# mysqli.cache_size = 2000
+# mysqli.default_port = 3306
+# mysqli.default_socket =
+# mysqli.default_host =
+# mysqli.default_user =
+# mysqli.default_pw =
+# mysqli.reconnect = Off
+# [mysqlnd]
+# mysqlnd.collect_statistics = On
+# mysqlnd.collect_memory_statistics = Off
+# [OCI8]
+# [PostgreSQL]
+# pgsql.allow_persistent = On
+# pgsql.auto_reset_persistent = Off
+# pgsql.max_persistent = -1
+# pgsql.max_links = -1
+# pgsql.ignore_notice = 0
+# pgsql.log_notice = 0
+# [Sybase-CT]
+# sybct.allow_persistent = On
+# sybct.max_persistent = -1
+# sybct.max_links = -1
+# sybct.min_server_severity = 10
+# sybct.min_client_severity = 10
+# [bcmath]
+# bcmath.scale = 0
+# [browscap]
+# [Session]
+# session.save_handler = files
+# session.use_strict_mode = 0
+# session.use_cookies = 1
+# session.use_only_cookies = 1
+# session.name = PHPSESSID
+# session.auto_start = 0
+# session.cookie_lifetime = 0
+# session.cookie_path = /
+# session.cookie_domain =
+# session.cookie_httponly =
+# session.serialize_handler = php
+# session.gc_probability = 1
+# session.gc_divisor = 1000
+# session.gc_maxlifetime = 1440
+# session.referer_check =
+# session.cache_limiter = nocache
+# session.cache_expire = 180
+# session.use_trans_sid = 0
+# session.hash_function = 0
+# session.hash_bits_per_character = 5
+# url_rewriter.tags = "a=href,area=href,frame=src,input=src,form=fakeentry"
+# [MSSQL]
+# mssql.allow_persistent = On
+# mssql.max_persistent = -1
+# mssql.max_links = -1
+# mssql.min_error_severity = 10
+# mssql.min_message_severity = 10
+# mssql.compatibility_mode = Off
+# mssql.secure_connection = Off
+# [Assertion]
+# [mbstring]
+# [gd]
+# [exif]
+# [Tidy]
+# tidy.clean_output = Off
+# [soap]
+# soap.wsdl_cache_enabled=1
+# soap.wsdl_cache_dir="/tmp"
+# soap.wsdl_cache_ttl=86400
+# soap.wsdl_cache_limit = 5
+# [sysvshm]
+# [ldap]
+# ldap.max_links = -1
+# [mcrypt]
+# [dba]
+# [curl]
+# [openssl]
+EOF
+
+5.启动php容器
+docker run -tid \
+-p 9000:9000 \
+--name php-fpm \
+--restart=always \
+--privileged=true \
+-v /opt/php/conf/:/bitnami/php/conf/ \
+-v /opt/nginx/html:/usr/share/nginx/html \
+bitnami/php-fpm
+
+6.启动nginx容器
+docker run -tid \
+--name nginx \
+--restart=always \
+-p 80:80 \
+--privileged=true \
+-v /opt/nginx/conf.d:/etc/nginx/conf.d \
+-v /opt/nginx/conf/nginx.conf:/etc/nginx/nginx.conf \
+-v /opt/nginx/html:/usr/share/nginx/html \
+-v /opt/nginx/log:/var/log/nginx \
+--link php-fpm:php \
+nginx
+
+
+

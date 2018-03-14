@@ -1,0 +1,32 @@
+./configure --prefix=/usr/local/nginx \
+	--with-http_realip_module \
+	--with-http_sub_module \
+	--with-http_gzip_static_module \
+	--with-http_stub_status_module \
+	--with-pcre \
+	--with-http_ssl_module \
+	--with-http_addition \
+	--with-http_random_index_module \
+	--with-http_dav_module
+	--add-module=/usr/local/src/nginx_upstream_hash-/ \
+	--add-module=/usr/local/src/gnosek-nginx-upstream-fair-/ \
+	--add-module=/usr/local/src/nginx_mod_h264_streaming-2.2.7/
+	
+添加模块
+make
+无需make install
+cp /usr/local/nginx/sbin/nginx /usr/local/nginx/sbin/nginx_bak
+cp ./opjs/nginx /usr/local/nginx/sbin/
+
+
+
+
+ --prefix=/usr/local/nginx 
+ --with-http_realip_module 
+ --with-http_sub_module 
+ --with-http_gzip_static_module
+ --with-http_stub_status_module 
+ --with-pcre --with-http_ssl_module 
+ --add-module=/usr/local/src/nginx-rtmp-module-master 
+ --without-http_rewrite_module 
+ --add-module=/usr/local/src/echo-nginx-module-0.58

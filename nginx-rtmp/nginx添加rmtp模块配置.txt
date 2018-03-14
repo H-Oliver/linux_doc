@@ -1,0 +1,54 @@
+1.下载nginx-rtmp-module
+git clone https://github.com/arut/nginx-rtmp-module.git
+
+2.安装模块
+2.1先检查 nginx已load的模块 
+#nginx -V
+2.2 切换到nginx源码安装文件夹
+#cd /usr/local/src/nginx-1.6.2
+./configure --add-module=/path/to/nginx-rtmp-module 
+make
+不需要make intall，否则会把原来的nginx配置覆盖
+#cp /usr/local/nginx/sbin/nginx /usr/local/nginx/sbin/nginx_bak //备份原nginx文件
+#cp ./opjs/nginx /usr/local/nginx/sbin/		//把新make的nginx文件覆盖原来
+
+3.配置rtmp
+编辑nginx.conf文件，在http{}上面添加下面的代码，是nginx支持rtmp
+
+rtmp {
+server {
+listen 1935;	//端口号
+chunk_size 4000;
+ application live {
+        live on;
+        hls on;
+        hls_path /tmp/hls;
+ }
+ }
+}
+
+然后添加nginx虚拟站点做rtmp状态检测
+server {
+        listen 8080;
+        location /stat {
+            rtmp_stat all;
+            rtmp_stat_stylesheet stat.xsl;
+        }
+        location /stat.xsl {
+            root /usr/local/nginx/html/nginx-rtmp-module-master/;
+        }
+        location /hls {
+                types {
+                application/vnd.apple.mpegurl m3u8;
+                video/mp2t ts;
+            }
+                root /tmp;
+                add_header Cache-Control no-cache;
+        }
+        location /dash {
+            root /tmp;
+            add_header Cache-Control no-cache;
+        }
+}
+
+用浏览器访问 http://192.168.1.142:8080/stat

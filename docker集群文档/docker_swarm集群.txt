@@ -1,0 +1,853 @@
+本文是swarm docker 集群文档 670685
+环境：centos7.2
+192.168.1.14 master swarm-manager rethinkdb controller swarm-agent consul-s1 registrator consul-template(nginx)
+192.168.1.15 slave-1 registrator swarm-agent consul-s2
+192.168.1.16 slave-2 registrator swarm-agent consul-s3
+docker-engine	17.05.0-ce
+
+一、搭建docker集群环境
+1、先检查是否安装旧版本docker
+rpm -qa|grep docker
+如果有就先卸载
+yum remove docker*
+
+2、添加docker.repo安装源，写入文件
+tee /etc/yum.repos.d/docker.repo<<EOF
+[dockerrepo]
+name=Docker Repository
+baseurl=https://yum.dockerproject.org/repo/main/centos/7/
+enabled=1
+gpgcheck=1
+gpgkey=https://yum.dockerproject.org/gpg
+EOF
+
+3、安装docker
+yum install docker-engine
+
+4、配置防火墙
+firewall-cmd --permanent --add-port={2375/tcp,3375/tcp,8500/tcp,8300/tcp,8301/tcp,8301/udp,8302/tcp,8302/udp,8400/tcp,8500/tcp,8600/tcp,8600/udp,8080/tcp,28015/tcp,29015/tcp}
+firewall-cmd --reload
+firewall-cmd --list-all
+------------------------------------------------------------------------------------------------
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:DOCKER - [0:0]
+-A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER
+-A OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER
+-A POSTROUTING -s 192.168.0.0/16 ! -o docker0 -j MASQUERADE
+COMMIT
+#
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:DOCKER - [0:0]
+-A FORWARD -o docker0 -j DOCKER
+-A FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -i docker0 ! -o docker0 -j ACCEPT
+-A FORWARD -i docker0 -o docker0 -j ACCEPT
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 21 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 80 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 2375 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 3375 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8080 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8300 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8301 -j ACCEPT
+-A INPUT -p udp -m state --state NEW -m udp --dport 8301 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8302 -j ACCEPT
+-A INPUT -p udp -m state --state NEW -m udp --dport 8302 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8400 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8500 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8600 -j ACCEPT
+-A INPUT -p udp -m state --state NEW -m udp --dport 8600 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 28015 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 29015 -j ACCEPT
+#-A INPUT -j REJECT --reject-with icmp-host-prohibited
+#-A FORWARD -j REJECT --reject-with icmp-host-prohibited
+COMMIT
+
+5、增加tcp监听端口,并配置docker加速
+修改/lib/systemd/system/docker.service
+daocloud加速
+sed -i 's/ExecStart=.*/ExecStart=\/usr\/bin\/dockerd -H unix\:\/\/\/var\/run\/docker.sock -D -H tcp\:\/\/0.0.0.0\:2375 --registry-mirror=http\:\/\/a582cc4e.m.daocloud.io --live-restore/g' /lib/systemd/system/docker.service
+
+私库
+sed -i 's/ExecStart=.*/ExecStart=\/usr\/bin\/dockerd -H unix\:\/\/\/var\/run\/docker.sock -D -H tcp\:\/\/0.0.0.0\:2375 --registry-mirror=http\:\/\/a582cc4e.m.daocloud.io --insecure-registry 192.168.1.14\:5000 --live-restore/g' /lib/systemd/system/docker.service
+
+阿里云加速
+sed -i 's/ExecStart=.*/ExecStart=\/usr\/bin\/dockerd -H unix\:\/\/\/var\/run\/docker.sock -D -H tcp\:\/\/0.0.0.0\:2375 --registry-mirror=https\:\/\/0xl18ug0.mirror.aliyuncs.com --live-restore/g' /lib/systemd/system/docker.service
+
+
+6、重启docker
+systemctl daemon-reload
+systemctl enable docker.service
+systemctl restart docker.service
+ps -ef |grep docker
+#能看到docker启动以及2375端口
+
+7、安装pip以及docker api
+yum -y install epel-release
+yum -y install python-pip
+pip install docker-py docker-compose
+
+8、创建consul用户及组
+groupadd -g 1005 consul
+useradd -u 105 -g 1005 -s /bin/false consul
+
+9、创建consul数据存储文件夹
+mkdir -p /opt/consul/{data,conf}
+chown -R consul: /opt/consul
+
+10、设置主机hosts，有多少台主机，就需要设置多少hosts
+vim /etc/hosts
+192.168.1.14    master.localhost.com
+192.168.1.15    slave1.localhost.com
+192.168.1.16    slave2.localhost.com
+
+二、配置consul cluster
+
+1、拉取consul镜像
+docker pull progrium/consul
+#提示：目录没有官方出consul镜像，以上consul镜像是官方推荐的第三方docker image
+
+2、启动consul server 192.168.1.14
+docker run -d \
+-p 8300:8300 \
+-p 8301:8301 \
+-p 8301:8301/udp \
+-p 8302:8302 \
+-p 8302:8302/udp \
+-p 8400:8400 \
+-p 8500:8500 \
+-p 8600:53 \
+-p 8600:53/udp \
+-v /opt/consul/data:/data \
+-h $HOSTNAME \
+--restart=always \
+--name=consul-s1 \
+progrium/consul \
+-server -bootstrap-expect=1 \
+-ui-dir=/ui \
+-client 0.0.0.0 \
+-advertise 192.168.1.14
+
+3、启动consul server 192.168.1.15
+docker run -d \
+-p 8300:8300 \
+-p 8301:8301 \
+-p 8301:8301/udp \
+-p 8302:8302 \
+-p 8302:8302/udp \
+-p 8400:8400 \
+-p 8500:8500 \
+-p 8600:53 \
+-p 8600:53/udp \
+-v /opt/consul/data:/data \
+-h consul-s2 \
+--restart=always \
+--name=consul-s2 \
+progrium/consul \
+-server \
+-ui-dir=/ui \
+-client 0.0.0.0 \
+-advertise 192.168.1.15 -join 192.168.1.14
+
+4、启动consul client 192.168.1.16
+docker run -d \
+-p 8300:8300 \
+-p 8301:8301 \
+-p 8301:8301/udp \
+-p 8302:8302 \
+-p 8302:8302/udp \
+-p 8400:8400 \
+-p 8500:8500 \
+-p 8600:53 \
+-p 8600:53/udp \
+-v /opt/consul/data:/data \
+-h consul-c1 \
+--restart=always \
+--name=consul-c1 \
+progrium/consul \
+-advertise 192.168.1.16 -join 192.168.1.14
+
+三、registrator状态获取
+依次启动
+
+docker run -d \
+--restart=always \
+--name=registrator \
+--net=host \
+-v /var/run/docker.sock:/tmp/docker.sock \
+gliderlabs/registrator \
+-ip 192.168.1.14 \
+consul://192.168.1.14:8500
+
+docker run -d \
+--restart=always \
+--name=registrator \
+--net=host \
+-v /var/run/docker.sock:/tmp/docker.sock \
+gliderlabs/registrator \
+-ip 192.168.1.15 \
+consul://192.168.1.15:8500
+
+docker run -d \
+--restart=always \
+--name=registrator \
+--net=host \
+-v /var/run/docker.sock:/tmp/docker.sock \
+gliderlabs/registrator \
+-ip 192.168.1.16 \
+consul://192.168.1.16:8500
+
+四、安装shipyard、swarm
+1、192.168.1.14
+docker run -tid \
+-p 3375:3375 \
+--restart=always \
+--name shipyard-swarm-manager \
+swarm:latest \
+manage --host tcp://0.0.0.0:3375 consul://192.168.1.14:8500
+
+docker run -tid \
+--restart=always \
+--name=shipyard-rethinkdb \
+-p 28015:28015 \
+-p 29015:29015 \
+-v /opt/rethinkdb:/data \
+index.tenxcloud.com/docker_library/rethinkdb
+
+docker run -tid \
+--restart=always \
+--name shipyard-controller \
+--link shipyard-rethinkdb:rethinkdb \
+--link shipyard-swarm-manager:swarm \
+-p 8080:8080 \
+dockerclub/shipyard:latest \
+server \
+-d tcp://swarm:3375
+
+docker run -tid \
+--restart=always \
+--name shipyard-swarm-agent \
+swarm:latest \
+join --addr 192.168.1.14:2375 consul://192.168.1.14:8500
+
+2、安装swarm-agent
+主机192.168.1.15操作
+docker run -tid \
+--restart=always \
+--name shipyard-swarm-agent \
+swarm:latest \
+join --addr 192.168.1.15:2375 consul://192.168.1.14:8500
+
+主机192.168.1.16操作
+docker run -tid \
+--restart=always \
+--name shipyard-swarm-agent \
+swarm:latest \
+join --addr 192.168.1.16:2375 consul://192.168.1.14:8500
+
+五、安装haproxy或者nginx（192.168.1.14）
+1、安装haproxy
+yum -y install git patch gcc gcc-c++  readline-devel zlib-devel libffi-devel \
+openssl openssl-devel make autoconf automake libtool bison libxml2 \
+libxml2-devel libxslt-devel libyaml-devel  python  python-docutils \
+cmake imake expat-devel libaio libaio-devel bzr ncurses-devel wget \
+libjpeg libjpeg-devel libpng libpng-devel freetype freetype-devel  \
+pcre-devel curl-devel libmcrypt libmcrypt-devel
+
+cd /tmp
+wget http://www.haproxy.org/download/1.7/src/haproxy-1.7.0.tar.gz
+tar -xvf /tmp/haproxy-1.7.0.tar.gz 
+make TARGET=linux31 PREFIX=/opt/haproxy
+make install PREFIX=/opt/haproxy
+
+2、配置haproxy.conf
+vim /opt/haproxy/conf/haproxy.conf
+global
+                log 127.0.0.1   local0
+                #log 127.0.0.1  local1 notice
+                #log loghost    local0 info
+                maxconn 50000
+                chroot /opt/haproxy
+                uid 99
+                gid 99
+ 
+                daemon
+                nbproc 2
+                pidfile /opt/haproxy/run/haproxy.pid
+                #debug
+                #quiet
+ 
+ defaults
+                mode    tcp
+                option  dontlognull
+                option  forwardfor
+                option  redispatch
+                retries 2
+                balance static-rr
+                stats enable
+                stats uri /ha?stats  #haproxy运行状态查看 自定义uri
+                timeout connect     3000
+                timeout client      50000
+                timeout server 50000
+ 
+listen admin_stat
+        # 监听端口
+        bind *:8888
+        # http的7层模式
+        mode http
+        #log global
+        # 统计页面自动刷新时间
+        stats refresh 30s
+        # 统计页面URL
+        stats uri /admin?stats
+        # 统计页面密码框上提示文本
+        stats realm Haproxy\ Statistics
+        # 统计页面用户名和密码设置
+        stats auth admin:admin
+        # 隐藏统计页面上HAProxy的版本信息
+        #stats hide-version
+ 
+listen login
+        bind *:9999
+        mode tcp
+        balance roundrobin
+        option httpchk
+        #maxconn 50000
+        #log 127.0.0.1 local0 debug
+
+3、haproxy启动脚本 /etc/init.d/haproxy
+#! /bin/bash
+# chkconfig: - 85 15
+# description: haproxy is a World Wide Web server. It is used to serve
+PROGDIR=/opt/haproxy
+PROGNAME=haproxy
+DAEMON=$PROGDIR/sbin/$PROGNAME
+CONFIG=$PROGDIR/conf/$PROGNAME.conf
+PIDFILE=$PROGDIR/run/$PROGNAME.pid
+DESC="HAProxy daemon"
+SCRIPTNAME=/opt/haproxy/init.d/$PROGNAME
+# Gracefully exit if the package has been removed.
+test -x $DAEMON || exit 0
+start()
+ {
+    echo -n "Starting $DESC: $PROGNAME"
+   $DAEMON -f $CONFIG
+   echo "."
+        }
+stop()
+ {  echo -n "Stopping $DESC: $PROGNAME"
+    cat $PIDFILE | xargs kill
+    echo "."
+}
+ 
+reload()
+ { echo -n "reloading $DESC: $PROGNAME"
+   $DAEMON -f $CONFIG -p $PIDFILE -sf $(cat $PIDFILE)
+}
+case "$1" in
+  start)
+  start
+  ;;
+ stop)
+  stop
+   ;;
+ reload)
+ reload
+   ;;
+*)
+ echo "Usage: $SCRIPTNAME {start|stop|reload}" >&2
+ exit 1
+ ;;
+esac
+exit 0
+
+4、启动haproxy,并加入到开启启动
+chmod +x /etc/init.d/haproxy
+chkconfig haproxy op
+service haproxy start
+
+5、安装nginx 并支持数字证书
+yum -y install git patch gcc gcc-c++  readline-devel zlib-devel libffi-devel \
+ openssl openssl-devel make autoconf automake libtool bison libxml2 \
+ libxml2-devel libxslt-devel libyaml-devel  python  python-docutils \
+ cmake imake expat-devel libaio libaio-devel bzr ncurses-devel wget \
+ libjpeg libjpeg-devel libpng libpng-devel freetype freetype-devel  \
+ pcre-devel curl-devel libmcrypt libmcrypt-devel
+下载安装openssl
+ cd /tmp
+wget https://www.openssl.org/source/openssl-1.1.0c.tar.gz
+ tar -xvf openssl-1.1.0c.tar.gz
+ cd /tmp/openssl-1.1.0c
+./config   --openssldir=/usr/local/ssl
+make && make install
+./config shared  --openssldir=/usr/local/ssl
+make clean
+make && make install
+ 
+下载安装 nginx
+cd /tmp
+wget http://nginx.org/download/nginx-1.11.7.tar.gz
+groupadd -r nginx
+useradd -g nginx -r nginx -s /bin/false
+tar -xvf nginx-1.11.7.tar.gz
+cd /tmp/nginx-1.11.7
+./configure --prefix=/usr/local/nginx \
+--sbin-path=/usr/sbin/nginx \
+--conf-path=/etc/nginx/nginx.conf \
+--error-log-path=/var/log/nginx/error.log \
+--http-log-path=/var/log/nginx/access.log \
+--pid-path=/var/run/nginx.pid \
+--lock-path=/var/run/nginx.lock \
+--http-client-body-temp-path=/var/cache/nginx/client_temp \
+--http-proxy-temp-path=/var/cache/nginx/proxy_temp \
+--http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
+--http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
+--http-scgi-temp-path=/var/cache/nginx/scgi_temp \
+--user=nginx \
+--group=nginx \
+--with-http_ssl_module \
+--with-http_realip_module \
+--with-http_addition_module \
+--with-http_sub_module \
+--with-http_dav_module \
+--with-http_flv_module \
+--with-http_mp4_module \
+--with-http_gunzip_module \
+--with-http_gzip_static_module \
+--with-http_random_index_module \
+--with-http_secure_link_module \
+--with-http_stub_status_module \
+--with-http_auth_request_module \
+--with-threads \
+--with-stream \
+--with-openssl=/tmp/openssl-1.1.0c \
+--with-stream_ssl_module \
+--with-http_slice_module \
+--with-mail \
+--with-mail_ssl_module \
+--with-file-aio \
+--with-http_v2_module \
+--with-ipv6 
+
+mkdir -pv /var/cache/nginx/{client_temp,proxy_temp,fastcgi_temp,uwsgi_temp,scgi_temp}
+mkdir -p /etc/nginx/conf.d
+make && make install
+
+6、nginx配置文件
+修改/etc/nginx/nginx.conf
+user  nginx;
+worker_processes  1;
+ 
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
+
+events {
+    worker_connections  1024;
+}
+ 
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+ 
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+ 
+    access_log  /var/log/nginx/access.log  main;
+ 
+    sendfile        on;
+    tcp_nopush     on;
+ 
+    keepalive_timeout  65;
+    gzip  on;
+    include /etc/nginx/conf.d/*.conf;
+}
+
+添加nginx默认web配置文件
+/etc/nginx/conf.d/default.conf
+server {
+        listen       80;
+        server_name  localhost;
+ 
+        #charset koi8-r;
+ 
+        #access_log  logs/host.access.log  main;
+ 
+        location / {
+            root   /usr/local/nginx/html;
+            index  index.php index.html index.htm;
+        }
+ 
+        #error_page  404              /404.html;
+ 
+        # redirect server error pages to the static page /50x.html
+        #
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+ 
+        # proxy the PHP scripts to Apache listening on 127.0.0.1:80
+        #
+        #location ~ \.php$ {
+        #    proxy_pass   http://127.0.0.1;
+        #}
+ 
+        # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+        #
+        location ~ \.php$ {
+            root           /usr/local/nginx/html;
+            fastcgi_pass   127.0.0.1:9000;
+            fastcgi_index  index.php;
+            fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+            include        fastcgi_params;
+        }
+        location ~* ^.+\.(jpg|jpeg|gif|png|bmp)$ {
+            access_log  off;
+            root        opencart;
+            expires     30d;
+                        break;
+        }
+}
+
+7、创建nginx启动脚本 /etc/init.d/nginx
+# chkconfig: 2345 10 90
+# description: Start and Stop redis
+ 
+PATH=/usr/local/bin:/sbin:/usr/bin:/bin
+ 
+EXEC=/usr/sbin/nginx
+PIDFILE=/var/run/nginx.pid
+CONF="/etc/nginx/nginx.conf"
+AUTH="1234"
+ 
+case "$1" in
+        start)
+                if [ -f $PIDFILE ]
+                then
+                        echo "$PIDFILE exists, process is already running or crashed."
+                else
+                        echo "Starting nginx server..."
+                        $EXEC &
+                fi
+                if [ "$?"="0" ]
+                then
+                        echo "nginx is running..."
+                fi
+                ;;
+        stop)
+                if [ ! -f $PIDFILE ]
+                then
+                        echo "$PIDFILE exists, process is not running."
+                else
+                        PID=$(cat $PIDFILE)
+                        echo "Stopping..."
+                        kill -9 $PID
+                        PID=$(pidof nginx)
+                        kill -9 $PID
+                        rm -rf /var/run/nginx.pid
+                        sleep 2
+                       while [ -x $PIDFILE ]
+                       do
+                                echo "Waiting for nginx to shutdown..."
+                               sleep 1
+                        done
+                        echo "nginx stopped"
+                fi
+                ;;
+        restart|reload)
+                ${0} stop
+                ${0} start
+                ;;
+        *)
+               echo "Usage: /etc/init.d/nginx {start|stop|restart|reload}" >&2
+                exit 1
+esac
+
+8、设置nginx开机启动
+chmod +x /etc/init.d/nginx
+chkconfig nginx on
+service nginx start
+
+六、安装consul-template 实现服务自动发现
+1、下载consul-template
+cd /tmp
+wget https://releases.hashicorp.com/consul-template/0.16.0/consul-template_0.16.0_linux_amd64.zip
+yum -y install unzip
+unzip /tmp/consul-template_0.16.0_linux_amd64.zip -d /usr/bin/
+
+2、consul-template haproxy配置
+cat > /opt/consul/conf/haproxy_ctmpl.json << EOF
+consul = "127.0.0.1:8500"
+   
+template {
+  source = "/opt/haproxy/conf/haproxy.ctmpl"
+  destination = "/opt/haproxy/conf/haproxy.conf"
+  command = "/etc/init.d/haproxy reload"
+}
+EOF
+
+3、haproxy.ctmpl配置 /opt/haproxy/conf/haproxy.ctmpl
+global  
+                log 127.0.0.1   local0  
+                #log 127.0.0.1  local1 notice  
+                #log loghost    local0 info  
+                maxconn 50000  
+                chroot /opt/haproxy
+                uid 99  
+                gid 99 
+ 
+                daemon  
+                nbproc 2
+                pidfile /opt/haproxy/run/haproxy.pid  
+                #debug  
+                #quiet  
+    
+ defaults  
+                mode    tcp  
+                option  dontlognull  
+                option  forwardfor  
+                option  redispatch  
+                retries 2  
+                balance static-rr
+                stats enable
+                stats uri /ha?stats 
+                timeout connect     3000  
+                timeout client      50000  
+                timeout server 50000  
+
+listen admin_stat  
+        bind *:8888    
+        mode http  
+        #log global   
+        stats refresh 30s  
+        stats uri /admin?stats  
+        stats realm Haproxy\ Statistics 
+        stats auth admin:admin 
+        #stats hide-version  
+ 
+frontend www
+         bind *:80
+         mode http
+         acl apache  hdr(HOST) apache.zone.com
+         acl nginx   hdr(HOST) nginx.zone.com
+         use_backend apache.qkazone.com if apache
+         use_backend nginx.qkazone.com if nginx
+backend apache.zone.com
+        balance         roundrobin
+        mode            http
+{{range service "apache-php-80"}}
+        server  apache {{.Address}}:{{.Port}} check {{end}}
+ 
+backend nginx.zone.com
+        mode http
+        balance         roundrobin
+{{range service "nginx-80"}}
+        server  nginx {{.Address}}:{{.Port}} check {{end}}
+ 
+listen login
+        bind *:9999
+        mode tcp
+        balance roundrobin
+        #log 127.0.0.1 local0 debug
+        {{range service "centos7"}}
+        server  ssh {{.Address}}:{{.Port}} check {{end}}
+
+4、配置consul-template  haproxy 启动脚本 /etc/init.d/haproxy_ctmpl
+#!/bin/bash
+# chkconfig: 2345 10 90
+# description: Start and Stop redis
+ 
+PATH=/usr/local/bin:/sbin:/usr/bin:/bin
+EXEC=/usr/bin/consul-template
+CONF="/opt/consul/conf/haproxy_ctmpl.json"
+case "$1" in
+        start)
+                 PID=$(ps -ef | grep -v grep  | grep "$EXEC -config $CONF" | awk '{print $2}')
+               if [ -n "$PID"   ]
+                   then
+                     echo "haproxy_ctmpl is running..."
+              else
+                echo "Starting haproxy_ctmpl server..."
+                        $EXEC -config $CONF > /tmp/haproxy_ctmpl.out 2>&1 &
+             fi
+             ;;
+       stop)
+            PID=$(ps -ef | grep -v grep  | grep "$EXEC -config $CONF" | awk '{print $2}')
+            if [  -n "$PID" ]
+                 then
+                        echo "Stopping..."
+                        kill -9 $PID
+                        sleep 2
+               else
+               echo "haproxy_ctmpl exists, process is not running."
+             fi
+             ;;
+       restart|force-reload)
+                ${0} stop
+                ${0} start
+                ;;
+*)
+               echo "Usage: /etc/init.d/tmpl {start|stop|restart|force-reload}" >&2
+                exit 1
+esac
+
+5、设置开机启动，启动
+chmod +x /etc/init.d/haproxy_ctmpl
+chkconfig haproxy_ctmpl on
+service haproxy_ctmpl start
+
+6、consul-template  nginx配置 /opt/consul/conf/nginx_ctmpl.json
+cat > /opt/consul/conf/nginx_ctmpl.json << EOF
+consul = "127.0.0.1:8500"
+   
+template {
+  source = "/etc/nginx/conf.d/nginx_web.ctmpl"
+  destination = "/etc/nginx/conf.d/nginx_web.conf"
+  command = "/usr/sbin/nginx  -s reload"
+}
+EOF
+
+7、/etc/nginx/conf.d/nginx_web.ctmpl 配置
+upstream apache {
+    ip_hash;
+    # Refer: http://nginx.org/en/docs/http/ngx_http_upstream_module.html#upstream
+    # least_conn;
+    # least_time;
+{{range service "apache-php-80"}}
+    server {{.Address}}:{{.Port}} fail_timeout=0;
+{{end}}
+    keepalive 64;
+}
+server {
+    listen 80;
+    server_name apache.zone.com;
+    location / {
+        client_max_body_size    0;
+        proxy_connect_timeout 300s;
+        proxy_send_timeout   900;
+        proxy_read_timeout   900;
+        proxy_buffer_size    32k;
+        proxy_buffers      4 32k;
+        proxy_busy_buffers_size 64k;
+        proxy_redirect     off;
+        proxy_hide_header  Vary;
+        proxy_set_header   Accept-Encoding '';
+        proxy_set_header   Host   $host;
+        proxy_set_header   Referer $http_referer;
+        proxy_set_header   Cookie $http_cookie;
+        proxy_set_header   X-Real-IP  $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_headers_hash_max_size 51200;
+        proxy_headers_hash_bucket_size 6400;
+        proxy_pass          http://apache/;
+    }
+}
+upstream nginx {
+    ip_hash;
+    # Refer: http://nginx.org/en/docs/http/ngx_http_upstream_module.html#upstream
+    # least_conn;
+    # least_time;
+{{range service "nginx-80"}}
+    server {{.Address}}:{{.Port}} fail_timeout=0;
+{{end}}
+    keepalive 64;
+}
+server {
+    listen 80;
+    server_name nginx.zone.com;
+    location / {
+        client_max_body_size    0;
+        proxy_connect_timeout 300s;
+        proxy_send_timeout   900;
+        proxy_read_timeout   900;
+        proxy_buffer_size    32k;
+        proxy_buffers      4 32k;
+        proxy_busy_buffers_size 64k;
+        proxy_redirect     off;
+        proxy_hide_header  Vary;
+        proxy_set_header   Accept-Encoding '';
+        proxy_set_header   Host   $host;
+        proxy_set_header   Referer $http_referer;
+        proxy_set_header   Cookie $http_cookie;
+        proxy_set_header   X-Real-IP  $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_headers_hash_max_size 51200;
+        proxy_headers_hash_bucket_size 6400;
+        proxy_pass          http://nginx/;
+    }
+}
+
+8、配置consul-template  nginx启动脚本 /etc/init.d/nginx_ctmpl
+#!/bin/bash
+# chkconfig: 2345 10 90
+# description: Start and Stop redis
+ 
+PATH=/usr/local/bin:/sbin:/usr/bin:/bin
+EXEC=/usr/bin/consul-template
+CONF="/opt/consul/conf/nginx_ctmpl.json"
+case "$1" in
+        start)
+                 PID=$(ps -ef | grep -v grep  | grep "$EXEC -config $CONF" | awk '{print $2}')
+               if [ -n "$PID"   ]
+                   then
+                     echo "haproxy_ctmpl is running..."
+              else
+                echo "Starting haproxy_ctmpl server..."
+                        $EXEC -config $CONF > /tmp/nginx_ctmpl.out 2>&1 &
+             fi
+             ;;
+       stop)
+            PID=$(ps -ef | grep -v grep  | grep "$EXEC -config $CONF" | awk '{print $2}')
+            if [  -n "$PID" ]
+                 then
+                        echo "Stopping..."
+                        kill -9 $PID
+                        sleep 2
+               else
+               echo "haproxy_ctmpl exists, process is not running."
+             fi
+             ;;
+       restart|force-reload)
+                ${0} stop
+                ${0} start
+                ;;
+*)
+               echo "Usage: /etc/init.d/tmpl {start|stop|restart|force-reload}" >&2
+                exit 1
+esac
+
+9、设置开机启动
+chmod +x /etc/init.d/nginx_ctmpl
+chkconfig nginx_ctmpl on
+service nginx_ctmpl start
+
+七、测试是否自动发现
+docker run -ti -d -p :80 eboraas/apache-php 
+docker run -d -ti -p :80 nginx
+
+1、consul web
+http://192.168.1.66:8500/ui/#/dc1/services
+
+2、shipyard web
+http://192.168.1.23:8080
+账号admin密码 shipyard
+
+3、haproxy web
+http://192.168.1.14:8888/admin?stats
+账号：admin 密码admin

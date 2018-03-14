@@ -1,0 +1,103 @@
+以添加ftp模块为例子
+
+进入源码目录
+
+cd php-5.2.13/ext/ftp
+#运行phpize生成configure
+
+/usr/local/php/bin/phpize
+
+#编译,指定php-config,注意这里的php-config,不是php.ini
+
+./configure --with-php-config=/usr/local/php/bin/php-config
+#上面可以添加--enable-ftp,也可以不用添加
+
+#编译安装
+
+make;make install
+
+#生成一个目录来存放扩展的模块
+
+mkdir /usr/local/php/etc/php/ext
+
+#复制ftp.so到模块目录
+
+cp /usr/local/php/lib/php/extensions/no-debug-non-zts-20060613/ftp.so /usr/local/php/etc/ext/
+
+#编辑php.ini文件,指定PHP到哪个目录读模块
+
+vi /usr/local/php/etc/php.ini
+
+extension_dir="/usr/local/php/etc/ext"
+#Load模块
+extension=ftp.so
+#保存退出
+
+重启nginx和php-fpm
+再用/usr/local/php/bin/php -m|grep ftp查看是否有ftp.so 
+
+location ~* .*\.(php|php5)$ {
+		try_files $uri =404;
+		include        fastcgi_params;
+	   	#fastcgi_pass   127.0.0.1:9002;
+	   	fastcgi_pass   php_backend; 
+           	fastcgi_index  index.php;
+                fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+           	#fastcgi_param  SCRIPT_FILENAME  /home/sudoidc.com/web$fastcgi_script_name;
+	        if ($fastcgi_script_name ~ \..*\/.*php) {
+         		return 403;
+   	 	 }
+          }
+
+
+--prefix=/usr/local/php \
+--exec-prefix=/usr/local/php \
+--bindir=/usr/local/php/bin \
+--sbindir=/usr/local/php/sbin \
+--includedir=/usr/local/php/include \
+--libdir=/usr/local/php/lib/php \
+--mandir=/usr/local/php/php/man \
+--with-config-file-path=/usr/local/php/etc \
+--with-mysql-sock=/var/lib/mysql/mysql.sock \
+--with-mcrypt=/usr/include \
+--with-mhash \
+--with-openssl \
+--with-mysql=shared,mysqlnd \
+--with-mysqli=shared,mysqlnd \
+--with-mysqli=/usr/bin/mysql_config \
+--with-pdo-mysql=shared,mysqlnd \
+--with-gd \
+--with-iconv \
+--with-zlib \
+--enable-zip \
+--enable-inline-optimization \
+--disable-debug \
+--disable-rpath \
+--enable-shared \
+--enable-xml \
+--enable-bcmath \
+--enable-shmop \
+--enable-sysvsem \
+--enable-mbregex \
+--enable-mbstring \
+--enable-ftp \
+--enable-gd-native-ttf \
+--enable-pcntl \
+--enable-sockets \
+--with-xmlrpc \
+--enable-soap \
+--without-pear \
+--with-gettext \
+--enable-session \
+--with-curl \
+--with-jpeg-dir \
+--with-freetype-dir \
+--enable-opcache \
+--enable-fpm \
+--enable-fastcgi \
+--with-fpm-user=php-fpm \
+--with-fpm-group=php-fpm \
+--without-gdbm \
+--disable-fileinfo \
+--enable-exif \
+--enable-ctype 

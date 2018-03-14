@@ -1,0 +1,176 @@
+
+1.安装redis组件
+	#yum install tcl
+	
+2.下载redis源码包
+	cd /usr/local/src
+	wget http://download.redis.io/releases/redis-3.0.7.tar.gz
+	#tar -zvxf redis-3.0.7.tar.gz
+	#cd redis-3.0.7
+	#make
+	#make install #按提示install
+	#cd src/
+	#make install
+下面提示就说明成功
+Hint: To run 'make test' is a good idea ;) 
+
+    INSTALL install
+    INSTALL install
+    INSTALL install
+    INSTALL install
+    INSTALL install
+以上redis已完成编译安装
+在/usr/local/bin 下面就存在了redis-benchmark  redis-check-aof  redis-check-dump  redis-cli  redis-sentinel  redis-server六个文件，其中redis-server为启动服务
+
+3.配置redis文件
+	#cp /usr/local/src/redis-3.0.7/redis.conf /etc/
+	#chmod 755 /etc/redis.conf
+
+启动redis
+	#/usr/local/bin/redis-server /etc/redis.conf
+
+修改redis.conf配置文件 vim /etc/redis.conf
+	下面是redis.conf的主要配置参数的意义：
+	daemonize：是否以后台daemon方式运行
+	pidfile：pid文件位置
+	port：监听的端口号
+	timeout：请求超时时间
+	loglevel：log信息级别
+	logfile：log文件位置
+	databases：开启数据库的数量
+	save * *：保存快照的频率，第一个*表示多长时间，第三个*表示执行多少次写操作。在一定时间内执行一定数量的写操作时，自动保存快照。可设置多个条件。
+	rdbcompression：是否使用压缩
+	dbfilename：数据快照文件名（只是文件名，不包括目录）
+	dir：数据快照的保存目录（这个是目录）
+	appendonly：是否开启appendonlylog，开启的话每次写操作会记一条log，这会提高数据抗风险能力，但影响效率。
+	appendfsync：appendonlylog如何同步到磁盘（三个选项，分别是每次写都强制调用fsync、每秒启用一次fsync、不调用fsync等待系统自己同步）
+
+4.修改 daemonize yes,以后台运行
+
+	这时你可以打开一个终端进行测试了，配置文件中默认的监听端口是6379
+
+5.建立用户和日志目录
+
+	第一次启动时建议为Redis建立用户和日志目录
+	#groupadd redis
+	#useradd -g redis redis -s /bin/false
+	#mkdir -p /var/lib/redis #db文件放在这里，需要修改redis.conf
+	#mkdir -p /var/log/redis #日志放在这里
+	#chown redis.redis /var/lib/redis 
+	#chown redis.redis /var/log/redis
+	
+vim /etc/redis.conf
+	# The working directory.
+	#
+	# The DB will be written inside this directory, with the filename specified
+	# above using the 'dbfilename' configuration directive.
+	#
+	# Also the Append Only File will be created inside this directory.
+	#
+	# Note that you must specify a directory here, not a file name.
+	dir /var/lib/redis
+---------------------------------------------------------------------------------------
+找到日志logfile
+	# Specify the log file name. Also 'stdout' can be used to force
+	# Redis to log on the standard output. Note that if you use standard
+	# output for logging but daemonize, logs will be sent to /dev/null
+	logfile /var/log/redis/redislog
+	
+
+
+或者编写启动脚本，加入到服务
+配置Init脚本
+
+Redis管理脚本基于Ubuntu 的发行版上的，在Centos linux 上并不能用，下面有个脚本可以用于CentOS 。 
+
+用这个脚本管理之前，需要先配置下面的内核参数，否则Redis脚本在重启或停止redis时，将会报错，并且不能自动在停止服务前同步数据到磁盘上： 
+
+# vim /etc/sysctl.conf
+
+vm.overcommit_memory = 1
+
+然后应用生效： 
+
+sysctl –p
+
+建立redis启动脚本： 
+
+vim /etc/init.d/redis
+
+#!/bin/bash 
+# 
+# Init file for redis 
+# 
+# chkconfig: - 80 12 
+# description: redis daemon 
+# 
+# processname: redis 
+# config: /etc/redis.conf 
+# pidfile: /var/run/redis.pid 
+source /etc/init.d/functions 
+#BIN="/usr/local/bin" 
+BIN="/usr/local/bin" 
+CONFIG="/etc/redis.conf" 
+PIDFILE="/var/run/redis.pid" 
+### Read configuration 
+[ -r "$SYSCONFIG" ] && source "$SYSCONFIG" 
+RETVAL=0 
+prog="redis-server" 
+desc="Redis Server" 
+start() { 
+        if [ -e $PIDFILE ];then 
+             echo "$desc already running...." 
+             exit 1 
+        fi 
+        echo -n $"Starting $desc: " 
+        daemon $BIN/$prog $CONFIG 
+        RETVAL=$? 
+        echo 
+        [ $RETVAL -eq 0 ] && touch /var/lock/subsys/$prog 
+        return $RETVAL 
+} 
+stop() { 
+        echo -n $"Stop $desc: " 
+        killproc $prog 
+        RETVAL=$? 
+        echo 
+        [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/$prog $PIDFILE 
+        return $RETVAL 
+} 
+restart() { 
+        stop 
+        start 
+} 
+case "$1" in 
+  start) 
+        start 
+        ;; 
+  stop) 
+        stop 
+        ;; 
+  restart) 
+        restart 
+        ;; 
+  condrestart) 
+        [ -e /var/lock/subsys/$prog ] && restart 
+        RETVAL=$? 
+        ;; 
+  status) 
+        status $prog 
+        RETVAL=$? 
+        ;; 
+   *) 
+        echo $"Usage: $0 {start|stop|restart|condrestart|status}" 
+        RETVAL=1 
+esac 
+exit $RETVAL
+
+然后增加服务并开机自启动：
+
+chmod 755 /etc/init.d/redis 
+chkconfig --add redis 
+chkconfig --level 345 redis on 
+chkconfig --list redis
+
+/etc/init.d/redis restart
+

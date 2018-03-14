@@ -1,0 +1,65 @@
+1.安装
+1.1 在/etc/yum.repos.d/目录创建mariadb.repo文件，内容如下
+
+# MariaDB 10.0.10 CentOS6 repository list - created 2016-03-01 11:20 UTC
+# http://mariadb.org/mariadb/repositories/
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.1.10/centos6-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1
+
+
+# MariaDB 10.0.10 CentOS7 repository list - created 2016-03-01 11:20 UTC
+# http://mariadb.org/mariadb/repositories/
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.1.10/centos7-amd64/
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1
+
+1.2 命令执行如下命令安装
+# yum install MariaDB-server MariaDB-client -y
+
+2.启动MariaDB
+# /etc/init.d/mysqld start
+
+3.为MariaDB设置root密码
+# mysqladmin -u root password 'newpassword'
+
+4.添加用户并设置权限
+
+//命令行登陆mysql
+shell> mysql -uroot -p
+Enter password: newpassword
+
+//查看当前使用的端口号
+MariaDB [(none)]> show global variables like 'port';
+
+//创建一个新的用户，并授予外网访问权限
+MariaDB [(none)]> use mysql;
+MariaDB [mysql]> create user 'user'@'%' identified by 'shang_1234';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [mysql]> select host,user from user;
++-----------+----------+
+| host      | user     |
++-----------+----------+
+| %         | root     |
+| %         | user     |
+| 127.0.0.1 | root     |
+| ::1       | root     |
+| localhost | root     |
++-----------+----------+
+5 rows in set (0.00 sec)
+
+//给新用户授权
+MariaDB [mysql]> grant all privileges on *.* to 'user'@'%' with grant option;
+Query OK, 0 rows affected (0.00 sec)
+MariaDB [mysql]> flush privileges;
+
+
+
+
+wget http://dev.mysql.com/get/mysql57-community-release-el7-9.noarch.rpm 
+rpm –ihv mysql57-community-release-el7-9.noarch.rpm

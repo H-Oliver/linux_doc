@@ -1,0 +1,38 @@
+1.备份容器
+docker ps -a
+f45d16baf0ba   nginx    "nginx -g 'daemon ..."   29 hours ago    Up 29 hours   0.0.0.0:80->80/tcp, 0.0.0.0:3003->3003/tcp
+
+选择要备份的容器，创建快照
+docker commit -p f45d16baf0ba nginx-backup
+
+docker images 查看docker镜像的容器快照
+
+备份有两种方法
+1.备份上传到docker注册中心
+2.将镜像打包成tar包存储在本地
+
+上传到docker注册中心
+docker login
+输入用户密码和邮箱
+
+打标签
+docker tag <images ID> oliver/nginx-backup:latest
+
+docker push oliver/nginx-backup
+
+保存在本地
+docker save -o /docker-backup/nginx-backup.tar nginx-backup
+
+ls /docker-backup
+
+二.恢复容器
+
+1.在docker注册中心
+docker pull oliver/nginx-backup:latest
+
+2.在本地,拷贝到要恢复的机器
+docker load -i nginx-backup.tar
+
+docker images
+
+docker run -tid --name nginx -p 80:80 -p 3003:3003 nginx-backup

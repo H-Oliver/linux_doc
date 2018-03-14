@@ -1,0 +1,50 @@
+下载go包
+wget http://golangtc.com/static/go/go1.5.1/go1.5.1.linux-amd64.tar.gz
+wget http://golangtc.com/static/go/1.6/go1.6.linux-amd64.tar.gz
+wget http://golangtc.com/static/go/1.8/go1.8.linux-amd64.tar.gz
+tar -zxvf go1.5.1.linux-amd64.tar.gz
+tar zxvf go1.6.linux-amd64.tar.gz
+
+cp -a go /usr/local/
+mkdir /data/
+setfacl -R -m o::r-- /data
+setfacl -R -m g::rw- /data
+setfacl -R -m u:shangtv:rwx /data
+
+setfacl -R -d --set o::r-- /data
+setfacl -R -d --set g::rw- /data
+setfacl -R -d --set u:shangtv:rwx /data
+
+mkdir /data/mygo
+
+设置环境变量
+echo "export GOROOT=/usr/local/go" >> /etc/profile
+echo "export GOBIN=$GOROOT/bin" >> /etc/profile
+echo "export GOPKG=$GOROOT/pkg/tool/linux_amd64" >> /etc/profile
+echo "export GOARCH=amd64" >> /etc/profile
+echo "export GOOS=linux" >> /etc/profile
+echo "export GOPATH=/data/mygo/" >> /etc/profile
+echo "export PATH=.:$PATH:$GOBIN:$GOPKG" >> /etc/profile
+
+source /etc/profile
+检查go版本
+#go version
+go version go1.5.1 linux/amd64
+
+nginx 支持反向代理
+server
+{
+    listen 80;
+    server_name 192.168.1.142;
+    error_log /usr/local/nginx/logs/nginx_error.log debug;
+    access_log /usr/local/nginx/logs/access.log;
+
+location / {
+        proxy_redirect off;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Host $http_host;
+        proxy_pass http://127.0.0.1:3000;
+    }
+
+}

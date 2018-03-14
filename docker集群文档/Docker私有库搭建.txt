@@ -1,0 +1,70 @@
+master：192.168.1.14
+linux环境
+uname -a
+Linux master.localhost.com 3.10.0-514.10.2.el7.x86_64 #1 SMP Fri Mar 3 00:04:05 UTC 2017 x86_64 x86_64 x86_64 GNU/Linux
+
+
+1.安装docker
+yum install libdevmapper* -y
+yum install docker -y
+
+2、启动docker
+
+systemctl start  docker.service
+systemctc enable docker
+
+3、设置docker 镜像源加速器
+
+curl -sSL https://get.daocloud.io/daotools/set_mirror.sh | sh -s http://ef017c13.m.daocloud.io
+	注：初次会生成/etc/docker/daemon.json  文件，并写入{"registry-mirrors": ["http://48b042ae.m.daocloud.io"]} 配置参数。
+
+cat /etc/docker/daemon.json
+{"registry-mirrors": ["http://ef017c13.m.daocloud.io"],
+    "live-restore": true
+}
+
+下载registry镜像
+
+docker pull registry
+
+4、启动registry容器
+mkdir -p /opt/registry
+
+docker run -d --restart=always -p 5000:5000 -v /opt/registry:/var/lib/registry registry
+
+5、配置本地deamon.json文件，添加如下参数：
+
+"insecure-registries":["192.168.1.14:5000"]			#该参数解决了 http: server gave HTTP response to HTTPS client问题
+
+cat /etc/docker/daemon.json
+{"registry-mirrors": ["http://ef017c13.m.daocloud.io"],
+ "insecure-registries": ["192.168.1.14:5000"],
+    "live-restore": true
+}
+
+6、官网拉取测试镜像
+docker pull redis
+
+7、测试镜像打标签
+docker tag redis 192.168.1.14:5000/localredis:01 	#注库名不能有大写字母
+
+8、上传到本地仓库
+docker push 192.168.1.14:5000/localredis:01
+
+9、删除本地镜像
+docker rmi 192.168.1.14:5000/localredis:01
+
+10、通过http api访问下
+curl 192.168.1.14:5000/v2/_catalog
+{"repositories":["localredis"]}
+curl 192.168.1.14:5000/v2/localredis/tags/list
+{"name":"localredis","tags":["01"]}
+
+11、拉取本地仓库镜像（其他节点需要配置/etc/docker/daemon.json,按照5配置）
+docker pull 192.168.1.14:5000/localredis:01
+
+12、验证是否下载：
+docker images
+REPOSITORY                     TAG                 IMAGE ID            CREATED                  SIZE
+192.168.1.14:5000/localredis  latest             83d6014ac5c8         Less than a second ago   183.6 MB
+192.168.1.14:5000/localredis   01                83d6014ac5c8         Less than a second ago   183.6 MB

@@ -1,0 +1,85 @@
+1.安装
+
+系统：centos7，默认在root用户下安装，使用普通用户，可使用sudo
+
+yum install python-setuptools -y
+
+easy_install supervisor	#如果没看到报错信息，就说明安装成功了，可以使用echo_supervisord_conf查看配置详情，而后生成配置文件
+
+mkdir -m 755 -p /etc/supervisor/
+
+echo_supervisord_conf > /etc/supervisor/supervisord.conf
+
+2.
+#创建存放配置文件的目录
+mkdir -m 755 /etc/supervisor/conf.d
+
+#在主配置文件中引入配置
+vim /etc/supervisor/supervisord.conf
+#注释去掉
+[include]
+files = ./conf.d/*.ini
+
+3.
+#创建一个golang的web server
+#程序放在/test 下面
+#先整一个简单的golang http服务
+---------------------------------
+package main
+import (
+    "fmt"
+    "log"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprintf(w, "Hello world")
+    })
+ 
+    err := http.ListenAndServe(":9090", nil)
+    if err != nil {
+        log.Fatal("ListenAndServe: ", err)
+    }
+}
+----------------------------------------
+
+#go build
+
+4.
+#在/etc/supervisor/conf.d下面创建go-http-server.ini
+;--------------------------------------------------------
+[program:golang-http-server]
+command=/test/go-http-server
+process_name=go-http-server
+user=root
+autostart=true
+autorestart=true
+startsecs=10
+stdout_logfile=/var/log/go_http_server.log
+stdout_logfile_maxbytes=1MB
+stdout_logfile_backups=10
+stdout_capture_maxbytes=1MB
+stderr_logfile=/var/log/go_http_server.log
+stderr_logfile_maxbytes=1MB
+stderr_logfile_backups=10
+stderr_capture_maxbytes=1MB
+;-----------------------------------------------------------
+
+5.
+#启动supervisor服务，注意：启动服务的时候，不需要启动goweb，不然会报错
+/usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+
+6.
+查看supervisor运行状态
+supervisorctl
+supervisor>status
+
+7.修改配置文件重新加载
+supervisorctl reload
+supervisorctl shutdown #关闭supervisor
+supervisorctl restart #重启supervisor
+
+
+
+

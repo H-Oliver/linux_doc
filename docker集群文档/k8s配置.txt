@@ -1,0 +1,207 @@
+部署k8s
+K8S分为master和slave两类角色
+
+1.测试环境说明（都在centos7环境下）：
+	k8s-master：192.168.1.16	（k8s的master所有主机，kubernetes+docker）
+	etcd-server：192.168.1.16	（etcd服务所有主机，与master在同一机器,etcd）
+	k8s-salve：192.168.1.15		（k8s节点所在主机,kubernetes+docker+flanneld）
+--------------------------------------------------------------------------------
+
+2.环境安装（最新化系统安装）
+	配置初始网络
+	yum -y install wget git ntpdate bind-utils net-tools
+	wget http://mirror.centos.org/centos/7/extras/x86_64/Packages/epel-release-7-2.noarch.rpm
+	yum update
+
+	centos7.2默认使用firewall作为防火墙，改成iptables防火墙(非必需，看熟悉程度)
+	关闭firewall：
+	systemctl stop firewalld.service
+	systemctl disable firewalld.service
+
+	安装iptables防火墙
+	yum install iptables-service
+	systemctl start iptables-service
+	systemctl enable iptables-service
+	setenforce 0
+
+master主机配置
+===================================================================================================
+配置yum源
+vim /etc/yum.repo.d/virt7-docker-common-release.repo
+
+添加以下内容：
+
+[virt7-docker-common-release]
+name=virt7-docker-common-release
+baseurl=http://cbs.centos.org/repos/virt7-docker-common-release/x86_64/os/
+gpgcheck=0
+
+或者：
+
+[sdake-kubernetes]
+name=Copr repo for kubernetes owned by sdake
+baseurl=https://copr-be.cloud.fedoraproject.org/results/sdake/kubernetes/epel-7-$basearch/
+type=rpm-md
+skip_if_unavailable=True
+gpgcheck=1
+gpgkey=https://copr-be.cloud.fedoraproject.org/results/sdake/kubernetes/pubkey.gpg
+repo_gpgcheck=0
+enabled=0
+enabled_metadata=1
+
+
+安装服务：采用yum源安装
+yum -y install --enabledrepo=virt7-docker-common-release kubernetes etcd docker
+
+修改配置文件/etc/etcd/etcd.conf，确保etcd监听所有地址
+cat /etc/etcd/etcd.conf
+ETCD_NAME=etcdserver
+ETCD_DATA_DIR="/var/lib/etcd/default.etcd"
+ETCD_LISTEN_CLIENT_URLS="http://0.0.0.0:2379"
+ETCD_ADVERTISE_CLIENT_URLS="http://0.0.0.0:2379"
+
+修改kubernetes配置文件
+
+cat /etc/kubernetes/config
+KUBE_LOGTOSTDERR="--logtostderr=true"
+KUBE_LOG_LEVEL="--v=0"
+KUBE_ALLOW_PRIV="--allow-privileged=false"
+KUBE_MASTER="--master=http://192.168.1.16:8080"
+
+cat /etc/kubernetes/apiserver
+KUBE_API_ADDRESS="--insecure-bind-address=0.0.0.0"
+KUBE_API_PORT="--port=8080"
+KUBELET_PORT="--kubelet-port=10250"
+KUBE_MASTER="--master=192.168.1.16:8080"
+KUBE_ETCD_SERVERS="--etcd-servers=http://192.168.1.16:2379"
+KUBE_SERVICE_ADDRESSES="--service-cluster-ip-range=10.254.0.0/16"
+KUBE_ADMISSION_CONTROL="--admission-control=NamespaceLifecycle,NamespaceExists,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota"
+KUBE_API_ARGS=""
+
+cat /etc/kubernetes/controller-manager (定义slave主机ip地址)
+KUBELET_ADDRESSES="--machines=192.168.1.15"
+KUBE_CONTROLLER_MANAGER_ARGS=""
+
+cat /etc/kubernetes/kubelet
+KUBELET_ADDRESS="--address=192.168.1.16"
+KUBELET_HOSTNAME="--hostname-override=192.168.1.16"
+KUBELET_API_SERVER="--api-servers=http://192.168.1.16:8080"
+KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=registry.access.redhat.com/rhel7/pod-infrastructure:latest"
+KUBELET_ARGS=""
+
+配置防火墙，其中2379为服务端口(默认是2379)
+iptables -I INPUT -s 0.0.0.0/0 -p tcp --dport 2379 -j ACCEPT
+iptables -I INPUT -s 0.0.0.0/0 -p tcp --dport 8080 -j ACCEPT
+
+启动服务
+执行如下命令，批量启动服务
+cat /script/kubenetes.sh
+#!/bin/bash
+for SERVICES in etcd kube-apiserver kube-controller-manager kube-scheduler; do
+	systemctl restart $SERVICES
+    systemctl enable $SERVICES
+    systemctl status $SERVICES
+done
+
+在etcd里定义flannel网络配置
+etcdctl mkdir /kube-centos/network
+etcdctl mk /kube-centos/network/config "{ \"Network\": \"172.30.0.0/16\", \"SubnetLen\": 24, \"Backend\": { \"Type\": \"vxlan\" } }"
+
+修改完配置之后，重启所有相关服务
+sh /script/kubernetes.sh
+
+用命令 kubecel get nodes，没有加入node节点，显示为空
+===================================================================================================
+以上是Master主机的配置
+
+slave节点配置（与master主机环境一致）
+===================================================================================================
+配置yum源
+vim /etc/yum.repo.d/virt7-docker-common-release.repo
+
+添加以下内容：
+[virt7-docker-common-release]
+name=virt7-docker-common-release
+baseurl=http://cbs.centos.org/repos/virt7-docker-common-release/x86_64/os/
+gpgcheck=0
+
+yum -y install --enablerepo=virt7-docker-common-release kubernetes flannel docker
+
+对flannel进行配置，编辑/etc/sysconfig/flanneld
+cat /etc/sysconfig/flanneld
+FLANNEL_ETCD_ENDPOINTS="http://192.168.1.16:2379"
+FLANNEL_ETCD_PREFIX="/kube-centos/network"
+
+修改kubernetes配置文件,指定master地址
+cat /etc/kubernetes/config
+KUBE_ETCD_SERVERS="http://192.168.1.16:2379"
+KUBE_LOGTOSTDERR="--logtostderr=true"
+KUBE_LOG_LEVEL="--v=0"
+KUBE_ALLOW_PRIV="--allow-privileged=false"
+KUBE_MASTER="--master=http://192.168.1.16:8080"
+
+配置kubelet服务
+cat /etc/kubernetes/kubecel
+KUBELET_ADDRESS="--address=0.0.0.0"
+KUBELET_PORT="--port=10250"
+KUBELET_HOSTNAME="--hostname-override=192.168.1.15"
+KUBELET_API_SERVER="--api-servers=http://192.168.1.16:8080"
+KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=registry.access.redhat.com/rhel7/pod-infrastructure:latest"
+
+
+把相关端口添加到防火墙服务
+iptables -I INPUT -s 192.168.1.16 -p tcp --dport 10250 -j ACCEPT
+iptables -I INPUT -s 192.168.1.16 -p tcp --dport 8080 -j ACCEPT
+iptables -I INPUT -s 192.168.1.16 -p tcp --dport 2379 -j ACCEPT
+
+在node节点上启动相关服务
+cat /script/kubernetes.sh 
+for SERVICES in kube-proxy kubelet flanneld docker;do
+    systemctl restart $SERVICES
+    systemctl enable $SERVICES
+    systemctl status $SERVICES
+done
+
+配置kubectl
+kubectl config set-cluster default-cluster --server=http://192.168.1.16:8080
+kubectl config set-context default-context --cluster=default-cluster --user=default-admin
+kubectl config use-context default-context
+
+在master主机使用kubectl get nodes查看，可以看到加入的node节点
+[root@master kubernetes]# kubectl get nodes
+NAME           STATUS    AGE
+192.168.1.15   Ready     4d
+===================================================================================================
+以上就完成了所有kubernetes的master和slave集群配置
+
+docker私有库搭建
+===================================================================================================
+为了安全可以生成自签名的证书来配置TLS
+	首先编辑/etc/pki/tls/openssl.cnf，在[ v3_ca ]下增加一行
+	[ v3_ca ]
+	subjectAltName = IP:192.168.1.15
+
+	然后使用openssl命令在当前的certs目录下创建一个自签名的证书:
+	openssl req -newkey rsa:4096 -nodes -sha256 -keyout certs/domain.key -x509 -days 365 -out certs/domain.crt
+
+在slave上安装docker
+yum -y install docker golang
+
+将生成的domain.crt文件复制到/etc/docker/certs.d/192.168.1.15:5000目录下，然后重启docker进程
+
+mkdir -p /etc/docker/certs.d/192.168.1.15:5000
+cp /etc/pki/tls/certs/domain.crt /etc/docker/certs.d/192.168.1.15:8082/ca.crt
+systemctl restart docker
+
+在Docker私有库节点192.168.1.15上运行registry容器，并暴露容器的8082端口：
+docker run -d -p 5000:5000 --restart=always --name registry -v `pwd`/certs:/certs -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key registry:2
+
+最后，将domain.crt文件复制到Kubernetes集群里的所有节点的/etc/docker/certs.d/192.168.1.15:8082目录下，并重启各节点的docker进程，例如在192.168.1.15节点上运行（我这里是只有一台slave节点，所以就不需要重复创建目录了）：
+mkdir -p /etc/docker/certs.d/192.168.1.15:5000
+scp root@192.168.1.15:~/certs/domain.crt /etc/docker/certs.d/192.168.169.125:5000/ca.crt
+systemctl restart docker
+
+===================================================================================================
+至此，Docker私有库搭建完成
+
+

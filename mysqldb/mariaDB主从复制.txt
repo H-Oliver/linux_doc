@@ -1,0 +1,169 @@
+主从复制的配置
+
+1.环境如下    
+	ip地址 数据版本 系统版本 
+	master 192.168.1.15
+	slave 192.168.1.16
+	
+
+2.版本：双方的版本要一致，如果不一致，主的要低于从的
+
+     时间：两台服务器的时间应该同步
+
+3.从哪儿开始复制
+
+      ①、都从0开始
+
+
+      ②、主服务器已经运行一段时间，并且存在不小的数据量
+
+4.从0开始的配置过程
+
+
+@@@@主服务器,修改配置文件
+vim /etc/my.cnf
+------------------------------------------------------------------------------
+[mysqld]
+server-id       = 1		\\服务器通过server-id来判断是否是本机已经执行过的命令
+
+log-bin= /mydata/logs/master-bin 	\\建议将二进制文件不要和数据文件放在同一个目录中
+
+innodb_file_per_table = ON 		\\将innodb的表分开存放
+
+sync_binlog = 1 		\\确保主从复制时的事务安全
+-------------------------------------------------------------------------------
+
+重启mysql服务
+service mysql restart
+
+创建有复制权限的账号
+mysql -uroot -p
+MariaDB [none] > use mysql;
+MariaDB [mysql]> grant replication slave,replication client on *.* to 'test'@'192.168.1.16' identified by '123456';
+MariaDB [mysql]> flush privileges;
+MariaDB [mysql]> show master status;
++-------------------+----------+--------------+------------------+
+| File              | Position | Binlog_Do_DB | Binlog_Ignore_DB |
++-------------------+----------+--------------+------------------+
+| master-bin.000002 |      647 |              |                  |
++-------------------+----------+--------------+------------------+
+1 row in set (0.00 sec)
+
+@@@@@从服务器，修改配置文件
+vim /etc/my.cnf
+--------------------------------------------------------------------
+#log-bin=mysql-bin	\\注释掉从服务器上的二进制文件日志，因为从服务器不会发生写操作，所有不需要开启二进制文件日志
+
+server-id = 16	\\修改从服务器上的server-id，一定不要跟主服务器一样
+
+innodb_file_per_table = ON	\\将innodb的表分开存放
+
+relay_log = /mydata/logs/slave-bin	\\开启中继日志
+
+read-only=ON	\\仅能复制那也不具有super权限的用户无法执行写操作
+
+sync_binlog = 1		\\确保主从复制时的事务安全
+-----------------------------------------------------------
+
+连接主服务器
+
+使用格式 change master to option [,option] ...
+option:
+    MASTER_BIND = 'interface_name'
+  | MASTER_HOST = 'host_name' 主服务器地址
+  | MASTER_USER = 'user_name' 授权复制的用户名
+  | MASTER_PASSWORD = 'password' 授权复制的密码
+  | MASTER_PORT = port_num 主服务器的端口
+  | MASTER_CONNECT_RETRY = interval 探测主服务器的时间
+  | MASTER_HEARTBEAT_PERIOD = interval 连接重试的时间
+  | MASTER_LOG_FILE = 'master_log_name' 复制开始的文件
+  | MASTER_LOG_POS = master_log_pos 复制开始的节点
+  
+  
+命令
+MariaDB [(none)]> change master to master_host='192.168.1.15',master_user='test',master_password='123456';
+
+启动复制线程（启动slave）
+MariaDB [(none)]> start slave;
+
+ps: slave stop;
+	slave reset;
+	
+查看slava状态
+MariaDB [(none)]> show slave status\G
+MariaDB [(none)]> show slave status\G
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event
+                  Master_Host: 192.168.1.15 \\主服务器ip地址
+                  Master_User: test	\\授权用户
+                  Master_Port: 3306	\\端口
+                Connect_Retry: 60	\\更新时间
+              Master_Log_File: master-bin.000002	\\主服务器的二进制日志
+          Read_Master_Log_Pos: 647	\\主服务器的当前节点
+               Relay_Log_File: slave-bin.000003	\\从服务器的中继日志
+                Relay_Log_Pos: 936	\\从服务器的当前节点
+        Relay_Master_Log_File: master-bin.000002	\\主服务器的当前日志
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+              Replicate_Do_DB: 
+          Replicate_Ignore_DB: 
+           Replicate_Do_Table: 
+       Replicate_Ignore_Table: 
+      Replicate_Wild_Do_Table: 
+  Replicate_Wild_Ignore_Table: 
+                   Last_Errno: 0
+                   Last_Error: 
+                 Skip_Counter: 0
+          Exec_Master_Log_Pos: 647
+              Relay_Log_Space: 1582
+              Until_Condition: None
+               Until_Log_File: 
+                Until_Log_Pos: 0
+           Master_SSL_Allowed: No
+           Master_SSL_CA_File: 
+           Master_SSL_CA_Path: 
+              Master_SSL_Cert: 
+            Master_SSL_Cipher: 
+               Master_SSL_Key: 
+        Seconds_Behind_Master: 0
+Master_SSL_Verify_Server_Cert: No
+                Last_IO_Errno: 0
+                Last_IO_Error: 
+               Last_SQL_Errno: 0
+               Last_SQL_Error: 
+  Replicate_Ignore_Server_Ids: 
+             Master_Server_Id: 1
+               Master_SSL_Crl: 
+           Master_SSL_Crlpath: 
+                   Using_Gtid: No
+                  Gtid_IO_Pos: 
+      Replicate_Do_Domain_Ids: 
+  Replicate_Ignore_Domain_Ids: 
+                Parallel_Mode: conservative
+1 row in set (0.00 sec)
+
+
+
+进入主库锁表，
+FLUSH TABLES WITH READ LOCK；
+mysql> show master status;
++-------------------+-----------+--------------+------------------+
+| File              | Position  | Binlog_Do_DB | Binlog_Ignore_DB |
++-------------------+-----------+--------------+------------------+
+| ufo.000063 | 159164526 |              |                  |
++-------------------+-----------+--------------+------------------+
+1 row in set (0.00 sec)
+进入从库
+mysql>change master to master_host='192.168.1.141', master_user='slave', 
+master_password='xxx', 
+master_port=3306, 
+master_log_file='ufo.000063', 
+master_log_pos=159164526;
+
+完成上面这些后
+start slave;
+回到主库
+unlock tables; 解锁
+
+回到从库 查看
+show slave status \G;

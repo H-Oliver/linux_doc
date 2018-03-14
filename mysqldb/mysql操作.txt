@@ -1,0 +1,508 @@
+1.创建用户
+CREATE USER demo IDENTIFIED BY “123456” 
+
+2.授权
+mysql>GRANT ALL PRIVILEGES ON shandong.* TO 'demo'@'%'WITH GRANT OPTION 
+
+GRANT ALL PRIVILEGES ON shandong.* TO 'demo'@'%'IDENTIFIED BY '123456' WITH GRANT OPTION; 
+mysql>FLUSH PRIVILEGES；
+
+3.查看MYSQL数据库中所有用户
+SELECT DISTINCT CONCAT('User: ''',user,'''@''',host,''';') AS query FROM mysql.user;
+or
+select host,user,password from  user;
+
+查看数据库中具体某个用户的权限
+mysql> show grants for 'cactiuser'@'%';
+mysql> select * from mysql.user where user='cactiuser' \G
+
+查看user表结构　需要具体的项可结合表结构来查询
+mysql> desc mysql.user;
+
+引用 
+另外，当用客户端连接 mysql 时，发现无法连接，看来需要对用户进行重新授权。操作如下： 
+bin/mysql -uroot -p -h 127.0.0.1 -A cws3 
+Enter password: 
+Welcome to the MySQL monitor. Commands end with or /g. 
+Your MySQL connection id is 1863 to server version: 4.1.20-standard 
+Type 'help;' or '/h' for help. Type '/c' to clear the buffer. 
+mysql> grant ALL PRIVILEGES ON *.* to root@"%" identified by "mysql" ； 
+Query OK, 0 rows affected (0.17 sec) 
+
+发现这样更改权限以后，远程仍然不能连接，但是用下面的操作就可以了。 
+mysql> grant ALL PRIVILEGES ON *.* to root@"%" identified by "mysql" WITH GRANT OPTION;
+
+
+4.连接本机上的mysql：
+
+进入目录mysql\bin，再键入命令mysql -uroot -p， 回车后提示输入密码，（在linux下，如果mysql是系统服务器则直接 mysql -u root -p 回车就可以，不用进入mysql\bin 目录）；
+ 退出mysql命令：exit（回车）
+
+5.修改mysql密码：
+
+mysqladmin -u用户名 -p旧密码 password 新密码
+ 或进入mysql命令行SET PASSWORD FOR root=PASSWORD(“root”);
+
+6.增加新用户。
+
+grant select on 数据库.* to 用户名@登录主机 identified by “密码”
+如增加一个用户test密码为123，让他可以在任何主机上登录， 并对所有数据库有查询、插入、修改、删除的权限。首先用以root用户连入mysql，然后键入以下命令：
+grant select,insert,update,delete on *.* to ” Identified by “123″;
+
+二、有关mysql数据库方面的操作
+
+必须首先登录到mysql中，有关操作都是在mysql的提示符下进行，而且每个命令以分号结束
+
+1、显示数据库列表。
+
+show databases;
+
+2、显示库中的数据表：
+
+use mysql； ／／打开库
+show tables;
+
+3、显示数据表的结构：
+
+describe 表名;
+
+4、建库：
+
+create database 库名;
+
+GBK: create database test2 DEFAULT CHARACTER SET gbk COLLATE gbk_chinese_ci;
+ UTF8: CREATE DATABASE `test2` DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+
+5、建表：
+use 库名；
+create table 表名(字段设定列表)；
+
+6、删库和删表:
+
+drop database 库名;
+drop table 表名；
+
+7、将表中记录清空：
+
+delete from 表名;
+
+truncate table 表名;
+
+8、显示表中的记录：
+select * from 表名;
+
+9、编码的修改
+
+如果要改变整个mysql的编码格式：
+ 启动mysql的时候，mysqld_safe命令行加入
+–default-character-set=gbk
+
+如果要改变某个库的编码格式：在mysql提示符后输入命令
+alter database db_name default character set gbk;
+
+10.重命名表
+
+alter table t1 rename t2;
+
+11.查看sql语句的效率
+
+explain < table_name >
+
+例如：explain select * from t3 where id=3952602;
+
+12.用文本方式将数据装入数据库表中(例如D:/mysql.txt)
+
+mysql> LOAD DATA LOCAL INFILE “D:/mysql.txt” INTO TABLE MYTABLE;
+
+三、数据的导入导出
+
+1、文本数据转到数据库中
+
+文本数据应符合的格式：字段数据之间用tab键隔开，null值用来代替。例：
+1 name duty 2006-11-23
+数据传入命令 load data local infile “文件名” into table 表名;
+
+2、导出数据库和表
+mysqldump -uroot -p --databases mygo --single-transaction --flush-logs --master-data=2 > /mariadb/data/mygo.sql
+mysqldump –opt news > news.sql（将数据库news中的所有表备份到news.sql文件，news.sql是一个文本文件，文件名任取。）
+mysqldump –opt news author article > author.article.sql（将数据库news中的author表和article表备份到author.article.sql文件， author.article.sql是一个文本文件，文件名任取。）
+mysqldump –databases db1 db2 > news.sql（将数据库dbl和db2备份到news.sql文件，news.sql是一个文本文件，文件名任取。）
+mysqldump -h host -u user -p pass –databases dbname > file.dump
+就是把host上的以名字user，口令pass的数据库dbname导入到文件file.dump中
+mysqldump –all-databases > all-databases.sql（将所有数据库备份到all-databases.sql文件，all-databases.sql是一个文本文件，文件名任取。）
+
+3、导入数据
+
+mysql < all-databases.sql（导入数据库）
+mysql>source news.sql;（在mysql命令下执行，可导入表）
+一、连接MySQL 
+格式： mysql -h主机地址 -u用户名 －p用户密码
+
+1、例1：连接到本机上的MYSQL。
+
+首先在打开DOS窗口，然后进入目录 mysqlbin，再键入命令mysql -uroot -p，回车后提示你输密码，如果刚安装好MYSQL，超级用户root是没有密码的，故直接回车即可进入到MYSQL中了，MYSQL的提示符是： mysql>。
+
+2、例2：连接到远程主机上的MYSQL。假设远程主机的IP为：110.110.110.110，用户名为root,密码为abcd123。则键入以下命令：
+
+mysql -h110.110.110.110 -uroot -pabcd123
+
+（注:u与root可以不用加空格，其它也一样）
+
+3、退出MYSQL命令： exit （回车）。
+
+二、修改密码
+
+格式：mysqladmin -u用户名 -p旧密码 password 新密码
+
+1、例1：给root加个密码ab12。首先在DOS下进入目录mysqlbin，然后键入以下命令：
+
+mysqladmin -uroot -password ab12
+
+注：因为开始时root没有密码，所以-p旧密码一项就可以省略了。
+
+2、例2：再将root的密码改为djg345。
+
+mysqladmin -uroot -pab12 password djg345
+
+三、增加新用户。
+
+（注意：和上面不同，下面的因为是MySQL环境中的命令，所以后面都带一个分号作为命令结束符）
+
+格式：grant select on 数据库.* to 用户名@登录主机 identified by \”密码\”
+
+例1、增加一个用户test1密码为abc，让他可以在任何主机上登录，并对所有数据库有查询、插入、修改、删除的权限。首先用以root用户连入MySQL，然后键入以下命令：
+
+grant select,insert,update,
+ delete on *.* to test1@\”%\” Identified by \”abc\”;
+
+但例1增加的用户是十分危险的，你想如某个人知道test1的密码，那么他就可以在internet上的任何一台电脑上登录你的MySQL数据库并对你的数据可以为所欲为了，解决办法见例2。
+
+例2、增加一个用户test2密码为abc,让他只可以在localhost上登录，并可以对数据库mydb进行查询、插入、修改、删除的操作 （localhost指本地主机，即MySQL数据库所在的那台主机），这样用户即使用知道test2的密码，他也无法从internet上直接访问数据 库，只能通过MySQL主机上的web页来访问。
+
+grant select,insert,update,
+ delete on mydb.* to test2@localhost identified by \”abc\”;
+
+如果你不想test2有密码，可以再打一个命令将密码消掉。
+
+grant select,insert,update,delete on mydb
+ .* to test2@localhost identified by \”\”;
+
+ 
+
+启动：net start mySql;
+
+进入：mysql -u root -p/mysql -h localhost -u root -p databaseName;
+
+列出数据库：show databases;
+
+选择数据库：use databaseName;
+
+列出表格：show tables；
+
+显示表格列的属性：show columns from tableName；
+
+建立数据库：source fileName.txt;
+
+匹配字符：可以用通配符_代表任何一个字符，％代表任何字符串;
+
+增加一个字段：alter table tabelName add column fieldName dateType;
+
+增加多个字段：alter table tabelName add column fieldName1 dateType,add columns fieldName2 dateType;
+
+多行命令输入:注意不能将单词断开;当插入或更改数据时，不能将字段的字符串展开到多行里，否则硬回车将被储存到数据中;
+
+增加一个管理员帐户：grant all on *.* to user@localhost identified by “password”;
+
+每条语句输入完毕后要在末尾填加分号’;'，或者填加’\g’也可以；
+
+查询时间：select now();
+
+查询当前用户：select user();
+
+查询数据库版本：select version();
+
+查询当前使用的数据库：select database();
+
+1、删除student_course数据库中的students数据表：
+
+rm -f student_course/students.*
+
+2、备份数据库：(将数据库test备份)
+
+mysqldump -u root -p test>c:\test.txt
+备份表格：(备份test数据库下的mytable表格)
+mysqldump -u root -p test mytable>c:\test.txt
+将备份数据导入到数据库：(导回test数据库)
+mysql -u root -p test
+
+3、创建临时表：(建立临时表zengchao)
+
+create temporary table zengchao(name varchar(10));
+
+4、创建表是先判断表是否存在
+
+create table if not exists students(……);
+
+5、从已经有的表中复制表的结构
+
+create table table2 select * from table1 where 1<>1;
+
+6、复制表
+
+create table table2 select * from table1;
+
+7、对表重新命名
+
+alter table table1 rename as table2;
+
+8、修改列的类型
+
+alter table table1 modify id int unsigned;//修改列id的类型为int unsigned
+ alter table table1 change id sid int unsigned;//修改列id的名字为sid，而且把属性修改为int unsigned
+
+9、创建索引
+
+alter table table1 add index ind_id (id);
+ create index ind_id on table1 (id);
+ create unique index ind_id on table1 (id);//建立唯一性索引
+
+10、删除索引
+
+drop index idx_id on table1;
+ alter table table1 drop index ind_id;
+
+11、联合字符或者多个列(将列id与”:”和列name和”=”连接)
+
+select concat(id,’:',name,’=') from students;
+
+12、limit(选出10到20条)<第一个记录集的编号是0>
+
+select * from students order by id limit 9,10;
+
+13、MySQL不支持的功能
+
+事务，视图，外键和引用完整性，存储过程和触发器
+14、MySQL会使用索引的操作符号
+
+<,<=,>=,>,=,between,in,不带%或者_开头的like
+
+15、使用索引的缺点
+1)减慢增删改数据的速度；
+2）占用磁盘空间；
+3）增加查询优化器的负担；
+ 当查询优化器生成执行计划时，会考虑索引，太多的索引会给查询优化器增加工作量，导致无法选择最优的查询方案；
+
+16、分析索引效率
+
+方法：在一般的SQL语句前加上explain；
+ 分析结果的含义：
+1）table：表名；
+2）type：连接的类型，(ALL/Range/Ref)。其中ref是最理想的；
+3）possible_keys：查询可以利用的索引名；
+4）key：实际使用的索引；
+5）key_len：索引中被使用部分的长度（字节）；
+6）ref：显示列名字或者”const”（不明白什么意思）；
+7）rows：显示MySQL认为在找到正确结果之前必须扫描的行数；
+8）extra：MySQL的建议；
+
+17、使用较短的定长列
+
+1）尽可能使用较短的数据类型；
+2）尽可能使用定长数据类型；
+a）用char代替varchar，固定长度的数据处理比变长的快些；
+b）对于频繁修改的表，磁盘容易形成碎片，从而影响数据库的整体性能；
+c）万一出现数据表崩溃，使用固定长度数据行的表更容易重新构造。使用固定长度的数据行，每个记录的开始位置都是固定记录长度的倍数，可以很容易被检测到，但是使用可变长度的数据行就不一定了；
+d）对于MyISAM类型的数据表，虽然转换成固定长度的数据列可以提高性能，但是占据的空间也大；
+
+18、使用not null和enum
+
+尽量将列定义为not null，这样可使数据的出来更快，所需的空间更少，而且在查询时，MySQL不需要检查是否存在特例，即null值，从而优化查询；
+ 如果一列只含有有限数目的特定值，如性别，是否有效或者入学年份等，在这种情况下应该考虑将其转换为enum列的值，MySQL处理的更快，因为所有的enum值在系统内都是以标识数值来表示的；
+
+19、使用optimize table
+
+对于经常修改的表，容易产生碎片，使在查询数据库时必须读取更多的磁盘块，降低查询性能。具有可变长的表都存在磁盘碎片问题，这个问题对blob数据类型更为突出，因为其尺寸变化非常大。可以通过使用optimize table来整理碎片，保证数据库性能不下降，优化那些受碎片影响的数据表。 optimize table可以用于MyISAM和BDB类型的数据表。实际上任何碎片整理方法都是用mysqldump来转存数据表，然后使用转存后的文件并重新建数据表；
+
+20、使用procedure analyse()
+
+可以使用procedure analyse()显示最佳类型的建议，使用很简单，在select语句后面加上procedure analyse()就可以了；例如：
+select * from students procedure analyse();
+ select * from students procedure analyse(16,256);
+第二条语句要求procedure analyse()不要建议含有多于16个值，或者含有多于256字节的enum类型，如果没有限制，输出可能会很长；
+
+21、使用查询缓存
+
+1）查询缓存的工作方式：
+ 第一次执行某条select语句时，服务器记住该查询的文本内容和查询结果，存储在缓存中，下次碰到这个语句时，直接从缓存中返回结果；当更新数据表后，该数据表的任何缓存查询都变成无效的，并且会被丢弃。
+2）配置缓存参数：
+ 变量：query_cache _type，查询缓存的操作模式。有3中模式，0：不缓存；1：缓存查询，除非与 select sql_no_cache开头；2：根据需要只缓存那些以select sql_cache开头的查询； query_cache_size：设置查询缓存的最大结果集的大小，比这个值大的不会被缓存。
+
+22、调整硬件
+
+1）在机器上装更多的内存；
+2）增加更快的硬盘以减少I/O等待时间；
+ 寻道时间是决定性能的主要因素，逐字地移动磁头是最慢的，一旦磁头定位，从磁道读则很快；
+3）在不同的物理硬盘设备上重新分配磁盘活动；
+ 如果可能，应将最繁忙的数据库存放在不同的物理设备上，这跟使用同一物理设备的不同分区是不同的，因为它们将争用相同的物理资源（磁头）。
+
+------------------------------------------------------------------------------------------------------
+ mysql登录不上解决方案
+ 方法一：
+# /etc/init.d/mysql stop
+# mysqld_safe --user=mysql --skip-grant-tables --skip-networking &
+# mysql -u root mysql
+mysql> UPDATE user SET Password=PASSWORD('newpassword') where USER='root';
+mysql> FLUSH PRIVILEGES;
+mysql> quit
+
+# /etc/init.d/mysqld restart
+# mysql -uroot -p
+Enter password: <输入新设的密码newpassword>
+
+mysql>
+
+方法二：
+直接使用/etc/mysql/debian.cnf文件中[client]节提供的用户名和密码:
+# mysql -udebian-sys-maint -p
+Enter password: <输入[client]节的密码>
+mysql> UPDATE user SET Password=PASSWORD('newpassword') where USER='root';
+mysql> FLUSH PRIVILEGES;
+mysql> quit
+
+# mysql -uroot -p
+Enter password: <输入新设的密码newpassword>
+
+mysql>
+
+方法三：
+这种方法我没有进行过测试，因为我的root用户默认密码已经被我修改过了，那位有空测试一下，把结果告诉我，谢谢！！
+# mysql -uroot -p
+Enter password: <输入/etc/mysql/debian.cnf文件中[client]节提供的密码>
+----------------------------------------------------------------------------
+
+建立库
+create database info character set utf8mb4 collate utf8mb4_general_ci;
+CREATE DATABASE `tpcms` DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci；
+
+授权命令GRANT 语句的语法如下： 
+GRANT privileges (columns) 
+ON what 
+TO user IDENTIFIEDBY "password" 
+WITH GRANT OPTION 
+对用户授权 
+mysql>grant rights on database.* to user@host identified by "pass"; 
+例1: 
+增加一个用户test1密码为abc，让他可以在任何主机上登录，并对所有数据库有查询、插入、修改、删除的权限。 
+grant select,insert,update,delete on *.* to test1@"%" Identified by "abc"; 
+ON 子句中*.* 说明符的意思是“所有数据库，所有的表” 
+例2: 
+增加一个用户test2密码为abc, 让他只可以在localhost上登录，并可以对数据库mydb进行查询、插入、修改、删除的操作。 
+grant select,insert,update,delete on mydb.* to test2@localhost identified by "abc"; 
+例子3 
+增加一个用户custom，他能从主机localhost、server.domain和whitehouse.gov连接。他只想要从 localhost存取bankaccount数据库，从whitehouse.gov存取expenses数据库和从所有3台主机存取customer 数据库。他想要从所有3台主机上使用口令stupid。
+
+为了使用GRANT语句设置个用户的权限，运行这些命令： 
+shell> mysql --user=root mysql 
+mysql> GRANT SELECT,INSERT,UPDATE,DELETE,CREATE,DROP 
+ON bankaccount.* TO custom@localhost IDENTIFIED BY 'stupid'; 
+mysql> GRANT SELECT,INSERT,UPDATE,DELETE,CREATE,DROP 
+ON expenses.* TO custom@whitehouse.gov IDENTIFIED BY 'stupid'; 
+mysql> GRANT SELECT,INSERT,UPDATE,DELETE,CREATE,DROP 
+ON customer.* TO custom@'%' IDENTIFIED BY 'stupid'; 
+============================================== 
+权限信息用user、db、host、tables_priv和columns_priv表被存储在mysql数据库中(即在名为mysql的数据库中)。 
+权限 列 Context 
+select Select_priv 表 
+insert Insert_priv 表 
+update Update_priv 表 
+delete Delete_priv 表 
+index Index_priv 表 
+alter Alter_priv 表 
+create Create_priv 数据库、表或索引 
+drop Drop_priv 数据库或表 
+grant Grant_priv 数据库或表 
+references References_priv 数据库或表 
+reload Reload_priv 服务器管理 
+shutdown Shutdown_priv 服务器管理 
+process Process_priv 服务器管理 
+file File_priv 在服务器上的文件存取 
+
+ 
+
+1.select、insert、update和delete权限 允许你在一个数据库现有的表上实施操作，是基本权限 
+2.alter权限允许你使用ALTER TABLE 
+3.create和drop权限允许你创建新的数据库和表，或抛弃(删除)现存的数据库和表 如果你将mysql数据库的drop权限授予一个用户，该用户能抛弃存储了MySQL存取权限的数据库！ 
+4.grant权限允许你把你自己拥有的那些权限授给其他的用户。 
+你不能明显地指定一个给定用户应该被拒绝存取。即，你不能明显地匹配一个用户并且然后拒绝连接。你不能指定一个用户有权创建立或抛弃一个数据库中的表，也不能创建或抛弃数据库本身。 可以同时列出许多被授予的单个权限。 
+例如，如果想让用户能读取和修改已有表的内容，但又不允许创建新表或删除表，可按如下授权： 
+GRANT SELECT,INSERT,DELETE,UPDATE ON samp_db.* TO 'user'@'%' IDENTIFIEDBY "pass"
+
+ 
+
+以上是我从别的地方拷贝过来后稍作修改的文字，下面自己写一些需要注意的东西。
+
+为什么使用了Grant all on db.* to user identified by "pass"后，在主机上访问数据库还会出现ERROR 1045 (28000): Access denied for user 'user'@'localhost' (using password: YES) 的错误提示？
+
+解答方法如下：运行命令 Grant all on db.* to 'user'@'localhost' identified by "pass"
+
+原因是：当不加@选项时，效果与加@'%'是一样的，'%'从名义上包括任何主机，（%必须加上引号，不然与@放在一起可能不会被辨认出。）不过有些时候（有些版本）'%'不包括localhost，要单独对@'localhost'进行赋值
+
+
+
+
+
+1.新建用户。 
+//登录MYSQL 
+@>mysql -u root -p 
+@>密码 
+//创建用户 
+mysql> mysql> insert into mysql.user(Host,User,Password,ssl_cipher,x509_issuer,x509_sub 
+ject) values("localhost","pppadmin",password("passwd"),'','',''); 
+这样就创建了一个名为：phplamp 密码为：1234 的用户。 
+然后登录一下。 
+mysql>exit; 
+@>mysql -u phplamp -p 
+@>输入密码 
+mysql>登录成功 
+2.为用户授权。 
+//登录MYSQL（有ROOT权限）。我里我以ROOT身份登录. 
+@>mysql -u root -p 
+@>密码 
+//首先为用户创建一个数据库(phplampDB) 
+mysql>create database phplampDB; 
+//授权phplamp用户拥有phplamp数据库的所有权限。 
+>grant all privileges on phplampDB.* to phplamp@localhost identified by '1234'; 
+//刷新系统权限表 
+mysql>flush privileges; 
+mysql>其它操作 
+/* 
+如果想指定部分权限给一用户，可以这样来写: 
+mysql>grant select,update on phplampDB.* to phplamp@localhost identified by '1234'; 
+//刷新系统权限表。 
+mysql>flush privileges; 
+*/ 
+3.删除用户。 
+@>mysql -u root -p 
+@>密码 
+mysql>Delete FROM user Where User="phplamp" and Host="localhost"; 
+mysql>flush privileges; 
+//删除用户的数据库 
+mysql>drop database phplampDB; 
+4.修改指定用户密码。 
+@>mysql -u root -p 
+@>密码 
+mysql>update mysql.user set password=password('新密码') where User="phplamp" and Host="localhost"; 
+mysql>flush privileges; 
+5.列出所有数据库 
+mysql>show database; 
+6.切换数据库 
+mysql>use '数据库名'; 
+7.列出所有表 
+mysql>show tables; 
+8.显示数据表结构 
+mysql>describe 表名; 
+9.删除数据库和数据表 
+mysql>drop database 数据库名; 
+mysql>drop table 数据表名; 
+
+

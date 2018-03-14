@@ -1,0 +1,65 @@
+1.安装nodejs
+下载官方已编译的源码包
+wget https://nodejs.org/dist/v5.3.0/node-v5.3.0-linux-x64.tar.gz --no-check-certificate
+
+tar zxvf node-v5.3.0-linux-x64.tar.gz 
+cp -a  node-v5.3.0-linux-x64 /usr/local/node
+设置环境变量，注意python版本  python --version Python推荐版本（ >= v2.5.0 & < 3.0.0 ），否则影响nodejs运行
+
+	export PATH=/usr/local/python/bin:/usr/local/node/bin:$PATH
+ 
+source /etc/profile #使环境变量生效
+ 
+这时候就可以使用node npm命令
+用 node -v和 npm -v 查看安装的版本
+
+#还需要安装 node-gyp 之类的包
+npm install -g node-gyp  
+
+设置nginx配置文件
+
+upstream nodejs {
+    server 127.0.0.1:8100;
+    keepalive 64;
+}
+
+server {
+    listen 8081;
+    server_name node.shang.com;
+    access_log /var/log/nginx/test.log;
+    location / {
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host  $http_host;
+        proxy_set_header X-Nginx-Proxy true;
+        proxy_set_header Connection "";
+        proxy_pass      http://nodejs；
+
+    }
+}
+
+
+#--------------------测试----------------------------
+#创建nodejs项目目录
+mkdir -p /usr/local/nodejs/
+
+#创建hello.js文件
+vi /usr/local/nodejs/hello.js
+
+#内容如下：
+var http = require("http");
+http.createServer(function(request, response) {
+	response.writeHead(200, {
+		"Content-Type" : "text/plain" // 输出类型
+	});
+	response.write("Nodejs Test Page!!");// 页面输出
+	response.end();
+}).listen(8100); // 监听端口号
+console.log("nodejs start listen 8102 port!");
+
+
+#后台运行
+node /usr/local/nodejs/hello.js &
+
+#浏览器访问
+http://192.168.1.142:8081
